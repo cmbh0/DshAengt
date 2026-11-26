@@ -180,13 +180,17 @@ object CloudTools {
             val path = args.str("path") ?: return ToolOutcome.fail("缺少 path")
             val raw = args["hunks"] as? kotlinx.serialization.json.JsonArray
                 ?: return ToolOutcome.fail("缺少 hunks 数组")
-            val hunks = raw.mapNotNull { element ->
-                (element as? JsonObject)?.let { obj ->
-                    val old = obj.str("old") ?: return@let null
-                    RemoteHunk(old = old, new = obj.str("new") ?: "", all = obj.bool("all") == true)
-                }
+            if (raw.isEmpty()) return ToolOutcome.fail("hunks 是空的")
+            // 残缺的一项整批拒绝，不是跳过：否则「发了三处、落盘两处、回一句已修改」
+            val hunks = raw.mapIndexed { index, element ->
+                val obj = element as? JsonObject
+                    ?: return ToolOutcome.fail("hunks 第 ${index + 1} 项不是 {old, new} 对象，整批未执行")
+                val old = obj.text("old")?.takeIf { it.isNotEmpty() }
+                    ?: return ToolOutcome.fail("hunks 第 ${index + 1} 项缺少 old，整批未执行")
+                val new = obj.text("new")
+                    ?: return ToolOutcome.fail("hunks 第 ${index + 1} 项缺少 new（要删除就传空字符串），整批未执行")
+                RemoteHunk(old = old, new = new, all = obj.bool("all") == true)
             }
-            if (hunks.isEmpty()) return ToolOutcome.fail("hunks 里没有任何有效的 {old, new}")
             val relative = clean(path)
             val diff = try {
                 remote.patch(relative, hunks)
@@ -303,7 +307,9 @@ object CloudTools {
 
         override suspend fun execute(args: JsonObject, ctx: ToolContext): ToolOutcome {
             val path = args.str("path") ?: return ToolOutcome.fail("缺少 path")
-            val content = args.str("content") ?: ""
+            // 缺 content 不能当成「写空文件」：那会把远端文件清空还报成功（本地工具同理）
+            val content = args.text("content")
+                ?: return ToolOutcome.fail("缺少 content。要写的正文放在 content 里；确实要写一个空文件就传空字符串。")
             val relative = clean(path)
             // diff 由服务端在写入时顺带产出，客户端不多跑一次 HTTP
             val diff = runCatching { remote.write(relative, content) }
@@ -329,8 +335,9 @@ object CloudTools {
 
         override suspend fun execute(args: JsonObject, ctx: ToolContext): ToolOutcome {
             val path = args.str("path") ?: return ToolOutcome.fail("缺少 path")
-            val old = args.str("old") ?: return ToolOutcome.fail("缺少 old")
-            val new = args.str("new") ?: ""
+            val old = args.text("old")?.takeIf { it.isNotEmpty() } ?: return ToolOutcome.fail("缺少 old")
+            val new = args.text("new")
+                ?: return ToolOutcome.fail("缺少 new。要把这段原文删掉就传空字符串。")
             val relative = clean(path)
             /*
              * 一次往返：读、查重、替换、写全在服务端做完。

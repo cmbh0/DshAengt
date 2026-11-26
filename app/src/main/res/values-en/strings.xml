@@ -173,7 +173,7 @@
     <string name="settings_mcp">MCP servers</string>
     <string name="settings_mcp_hint">Connect external tool servers (HTTP / stdio).</string>
     <string name="settings_runtime">Runtime</string>
-    <string name="settings_runtime_hint">Ubuntu environment: one install gives you apt, gcc and python3.</string>
+    <string name="settings_runtime_hint">The built-in shell toolbox works out of the box; install Python here when you need it.</string>
 
     <string name="terminal_title">Terminal</string>
     <string name="terminal_placeholder">Type a command…</string>
@@ -279,7 +279,7 @@
     <string name="about_libs_math">Math</string>
     <string name="about_libs_diagram">Diagrams</string>
     <string name="about_refs">Referenced projects</string>
-    <string name="about_ref_zakocoder">Reference implementation for the on-device Ubuntu (proot) runtime</string>
+    <string name="about_ref_zakocoder">Reference for the earlier on-device Ubuntu (proot) runtime, replaced by the built-in musl toolbox in 2.5.0</string>
     <string name="about_ref_operit">Reference for MCP tool wiring and the AI image-generation flow</string>
     <string name="about_ai_disclaimer">Generated content comes from the model; use your own judgement.</string>
 
@@ -351,7 +351,6 @@
     <string name="reasoning_low">low</string>
     <string name="reasoning_medium">medium</string>
     <string name="reasoning_xhigh">xhigh</string>
-    <string name="model_panel_thinking_mode">Thinking</string>
     <string name="model_panel_effort">Effort</string>
     <string name="model_panel_models">Model</string>
     <string name="model_panel_manage">Manage configs</string>
@@ -712,7 +711,7 @@
     <string name="workspace_current">Current</string>
     <string name="workspace_kind_internal">Internal · no permission needed</string>
     <string name="workspace_kind_device">Device folder · needs all-files access</string>
-    <string name="workspace_kind_container">Container folder · bound by host path</string>
+    <string name="workspace_kind_container">Folder bound by an older version · used as a normal device folder</string>
     <string name="workspace_hint">The agent and terminal can only see inside this folder. Rebinding never moves files.</string>
     <string name="workspace_shortcuts">Common locations</string>
     <string name="workspace_browse">Browse</string>
@@ -721,7 +720,7 @@
     <string name="workspace_not_dir">Not a directory</string>
     <string name="workspace_no_permission">Cannot read this folder — enable all-files access in Permissions</string>
     <string name="workspace_bind_here">Bind this folder</string>
-    <string name="workspace_container_hint">For a container workspace, enter the host path of that folder inside the Ubuntu rootfs, e.g. /storage/emulated/0/ubuntu/rootfs/home/user/app. Reads, writes and commands act on it directly.</string>
+    <string name="workspace_container_hint">Enter the full path of a folder on this device, e.g. /storage/emulated/0/Download/proj. Reads, writes and commands act on it directly; folders on shared storage need \"All files access\" first.</string>
     <string name="workspace_input_path">Enter a path</string>
     <string name="workspace_reset">Back to internal</string>
     <string name="workspace_open_permissions">Grant access</string>
@@ -780,7 +779,7 @@
     <string name="settings_cloud_hint">Put the workspace on a public machine — nothing on this phone.</string>
 
     <string name="cloud_title">Cloud environment</string>
-    <string name="cloud_intro">The workspace lives on a remote machine; the phone only sends instructions. No Ubuntu, no local storage. Each conversation binds its own environment, so topics never cross. Two ways in: an HTTP service (deploy bundle below) or SSH straight into a Linux box (nothing to install).</string>
+    <string name="cloud_intro">The workspace lives on a remote machine; the phone only sends instructions. That side is a full Linux (apt, npm, compilers) and uses no phone storage. Each conversation binds its own environment, so topics never cross. Two ways in: an HTTP service (deploy bundle below) or SSH straight into a Linux box (nothing to install).</string>
     <string name="cloud_add">Add cloud environment</string>
     <string name="cloud_edit">Edit</string>
     <string name="cloud_delete">Delete</string>
@@ -836,7 +835,7 @@
     <string name="workspace_cloud_switch">Change</string>
     <string name="workspace_cloud_unbind">Unbind</string>
     <string name="workspace_cloud_bound_hint">Reads, writes and commands in this chat all happen on that machine.</string>
-    <string name="workspace_cloud_intro">For when you neither want a container nor want the agent touching phone storage. Once bound, this chat\'s file and shell tools all move to the cloud.</string>
+    <string name="workspace_cloud_intro">For when you need a full Linux (apt, npm, compilers) or don\'t want the agent touching phone storage. Once bound, this chat\'s file and shell tools all move to the cloud.</string>
 
     <!-- ── Top bar overflow / tool card detail (v1.2.2) ────── -->
     <string name="topbar_more">More</string>
@@ -978,23 +977,12 @@
     <string name="action_confirm">OK</string>
     <string name="model_picker_all_hint">All (%1$d)</string>
 
-    <string name="runtime_ubuntu">Ubuntu environment</string>
-    <string name="runtime_ubuntu_desc">A real Linux: bash + apt + gcc, runs any terminal command. ~30 MB download, ~300 MB on disk.</string>
-    <string name="runtime_ubuntu_absent">not installed</string>
-    <string name="runtime_ubuntu_unsupported">unsupported</string>
-    <string name="runtime_ubuntu_install">Install</string>
-    <string name="runtime_ubuntu_installing">Installing…</string>
-    <string name="runtime_ubuntu_reinstall">Reinstall</string>
-    <string name="runtime_ubuntu_remove">Remove</string>
-    <string name="runtime_ubuntu_remove_hint">Deletes the whole Ubuntu root filesystem, including packages and files you created inside it. Workspace files are untouched.</string>
     <string name="runtime_python">Python</string>
-    <string name="runtime_python_desc">CPython inside the Ubuntu environment. Once it is there the AI can run scripts directly, instead of rewriting every one of them as a shell command.</string>
-    <string name="runtime_python_ready">Ready</string>
+    <string name="runtime_python_desc">A standalone CPython %1$s (musl build). About 28 MB to download and 45 MB on disk. Afterwards python3 / pip work in the terminal and the AI can run scripts directly; pip can install pure-Python packages and extension packages that publish musllinux wheels (numpy, pandas and so on).</string>
     <string name="runtime_python_absent">Not installed</string>
     <string name="runtime_python_install">Install Python</string>
     <string name="runtime_python_installing">Installing…</string>
     <string name="runtime_python_reinstall">Reinstall Python</string>
-    <string name="runtime_repair">Repair environment</string>
     <string name="runtime_working">Working…</string>
 
     <!-- File manager -->
@@ -1144,7 +1132,7 @@
     <string name="mcp_env">Environment</string>
     <string name="mcp_add_header">+ Add header</string>
     <string name="mcp_add_env">+ Add variable</string>
-    <string name="mcp_stdio_hint">stdio starts a local process. Android has no npx / uvx; install the runtime inside the built-in Ubuntu or Termux and use its absolute path.</string>
+    <string name="mcp_stdio_hint">stdio starts a local process inside the built-in toolbox environment. Android has no npx / uvx; for a Python server, install Python under Runtime first and use python3 followed by the absolute path of the script.</string>
     <string name="mcp_timeout">Timeout</string>
     <string name="mcp_seconds">s</string>
     <string name="mcp_test">Test connection</string>
@@ -1188,9 +1176,6 @@
     <string name="screen_pipeline_hint">Once picked, the AI only gets the tools for that mode — it cannot switch to the other one on its own. Screenshot mode sends the current frame with every observation, along with resolution and scale, for UE/Unity style scenes.</string>
     <string name="tool_run_steps">%1$d steps</string>
     <string name="tool_run_expand">Expand details of these %1$d calls</string>
-    <string name="model_params">Model parameters</string>
-    <string name="model_params_on">Thinking · %1$s</string>
-    <string name="model_params_off">Thinking · off</string>
     <string name="model_group_other">Others</string>
     <string name="profile_label">Profile</string>
     <string name="profile_list_title">Model profiles</string>
@@ -1355,8 +1340,44 @@
     <!-- 技能 / 运行环境：此前写死在代码里的几句 -->
     <string name="error_read_failed_short">Couldn\'t read the file</string>
     <string name="error_install_failed_short">Install failed</string>
-    <string name="error_repair_failed_short">Repair failed</string>
     <string name="runtime_preparing">Preparing…</string>
+    <string name="about_libs_runtime">Runtime</string>
+    <string name="runtime_toolbox">Built-in toolbox</string>
+    <string name="runtime_toolbox_desc">BusyBox shipped inside the app (static musl build): ash plus about two hundred commands, running directly on the phone. Nothing to download and no container. The terminal page and the AI both use it.</string>
+    <string name="runtime_toolbox_ready">Ready</string>
+    <string name="runtime_toolbox_unavailable">Unavailable</string>
+    <string name="runtime_toolbox_check">Self-test</string>
+    <string name="runtime_toolbox_checking">Testing…</string>
+    <string name="runtime_toolbox_fallback">The toolbox did not start on this device. Commands fall back to the system sh and Python is unavailable. Please report the reason below to the developer:</string>
+    <string name="runtime_python_remove">Remove</string>
+    <string name="runtime_python_remove_hint">Deletes the Python interpreter and every package installed with pip. Workspace files are untouched.</string>
+    <string name="runtime_python_needs_toolbox">Python depends on the built-in toolbox and can be installed once the toolbox works.</string>
+    <string name="runtime_legacy">Old Ubuntu environment</string>
+    <string name="runtime_legacy_desc">The proot + Ubuntu environment installed by 2.4 and earlier is no longer used and still takes %1$s. If it holds files you want to keep (under /root, for example), copy them out in the terminal first. It lives at: %2$s</string>
+    <string name="runtime_legacy_remove">Clean up</string>
+    <string name="runtime_legacy_removing">Cleaning…</string>
+    <string name="runtime_legacy_remove_hint">Deletes the whole old Ubuntu root filesystem, including packages installed in it and any files left inside. This cannot be undone.</string>
+    <string name="runtime_legacy_remove_failed">Could not remove everything. Please try again later.</string>
+    <string name="workspace_problem_permission">This folder is on shared storage, but \"All files access\" is off, so the AI cannot read or write it.</string>
+    <string name="workspace_problem_missing">This folder cannot be reached right now: it may have been deleted, renamed or moved. Pick another one, or put it back.</string>
+    <string name="workspace_problem_unreadable">No permission to read this folder. Pick another folder or check its access rights.</string>
+    <string name="workspace_problem_fix">Grant access</string>
+    <string name="reasoning_title">Thinking effort</string>
+    <string name="reasoning_chip_desc">Thinking effort: %1$s</string>
+    <string name="reasoning_desc_off">No thinking, answers right away. Fastest; good for small talk and simple questions.</string>
+    <string name="reasoning_desc_low">A brief think before answering. Fast; good for everyday questions.</string>
+    <string name="reasoning_desc_medium">A balance of speed and depth. The right choice most of the time.</string>
+    <string name="reasoning_desc_high">Thinks more carefully. For code, derivations and multi-step problems.</string>
+    <string name="reasoning_desc_xhigh">Deep reasoning. Noticeably slower and uses more tokens.</string>
+    <string name="reasoning_desc_max">Thinks as hard as it can. Slowest and most expensive; keep it for the hardest problems.</string>
+    <string name="reasoning_note">Some models do not support this and will ignore the setting.</string>
+    <string name="model_panel_thinking_mode">Thinking</string>
+    <string name="settings_home_icon">Home icon</string>
+    <string name="home_icon_default">Default</string>
+    <string name="home_icon_custom">Custom</string>
+    <string name="home_icon_change">Change icon</string>
+    <string name="home_icon_pick">Choose from gallery</string>
+    <string name="home_icon_reset">Restore default icon</string>
 </resources>
 
 

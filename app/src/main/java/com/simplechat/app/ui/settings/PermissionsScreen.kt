@@ -1,7 +1,7 @@
 package com.simplechat.app.ui.settings
 
+import com.simplechat.app.ui.common.relayClick
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -201,7 +201,7 @@ private fun PermissionRow(spec: PermissionSpec, granted: Boolean?, onClick: () -
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClickLabel = Res.get(R.string.permissions_open), onClick = onClick)
+            .relayClick(onClickLabel = Res.get(R.string.permissions_open), onClick = onClick)
             .padding(horizontal = SettingsDimens.RowPadH, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -1,5 +1,8 @@
 package com.simplechat.app.ui
 
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.runtime.snapshotFlow
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -241,6 +244,24 @@ fun RootScreen() {
         closeDrawer()
     }
 
+    /*
+     * 抽屉一动就收键盘。
+     *
+     * 顶栏那颗菜单按钮开抽屉前会先收键盘；用手拖出来的抽屉没有这一步，键盘还立着，
+     * 抽屉底部那一行（头像 / 设置入口）就被它压住了。
+     * 用 snapshotFlow 而不是直接在组合里读 `isOpen`：这里只关心「从关到开」那一下。
+     */
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(drawerState) {
+        snapshotFlow { drawerState.isOpen }.collect { open ->
+            if (open) {
+                keyboard?.hide()
+                focusManager.clearFocus()
+            }
+        }
+    }
+
     // 搜索态按返回 → 回抽屉列表。抽屉**保持打开** —— 用户本来就是从那儿进来的。
     BackHandler(enabled = searchMode) {
         historyViewModel.updateQuery("")
@@ -282,6 +303,8 @@ fun RootScreen() {
     SlideDrawer(
         state = drawerState,
         widthFraction = sheetFraction,
+        // 对话页上哪儿都能向右一拖拉出会话列表；别的页面只认左缘，免得和它们自己的横向操作打架
+        openFromAnywhere = route == Route.CHAT && !showOnboarding,
         drawerContent = {
             DrawerSurface() {
                 /*

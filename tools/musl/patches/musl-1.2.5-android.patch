@@ -1,0 +1,783 @@
+diff -ruN musl-1.2.5.orig/arch/x86_64/bits/syscall.h.in musl-1.2.5/arch/x86_64/bits/syscall.h.in
+--- musl-1.2.5.orig/arch/x86_64/bits/syscall.h.in	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/arch/x86_64/bits/syscall.h.in	2026-11-25 16:23:23.952200811 +0000
+@@ -1,11 +1,7 @@
+ #define __NR_read				0
+ #define __NR_write				1
+-#define __NR_open				2
+ #define __NR_close				3
+-#define __NR_stat				4
+ #define __NR_fstat				5
+-#define __NR_lstat				6
+-#define __NR_poll				7
+ #define __NR_lseek				8
+ #define __NR_mmap				9
+ #define __NR_mprotect			10
+@@ -19,9 +15,6 @@
+ #define __NR_pwrite64			18
+ #define __NR_readv				19
+ #define __NR_writev				20
+-#define __NR_access				21
+-#define __NR_pipe				22
+-#define __NR_select				23
+ #define __NR_sched_yield		24
+ #define __NR_mremap				25
+ #define __NR_msync				26
+@@ -31,11 +24,8 @@
+ #define __NR_shmat				30
+ #define __NR_shmctl				31
+ #define __NR_dup				32
+-#define __NR_dup2				33
+-#define __NR_pause				34
+ #define __NR_nanosleep			35
+ #define __NR_getitimer			36
+-#define __NR_alarm				37
+ #define __NR_setitimer			38
+ #define __NR_getpid				39
+ #define __NR_sendfile			40
+@@ -55,7 +45,6 @@
+ #define __NR_setsockopt			54
+ #define __NR_getsockopt			55
+ #define __NR_clone				56
+-#define __NR_fork				57
+ #define __NR_vfork				58
+ #define __NR_execve				59
+ #define __NR_exit				60
+@@ -76,23 +65,11 @@
+ #define __NR_fdatasync			75
+ #define __NR_truncate			76
+ #define __NR_ftruncate			77
+-#define __NR_getdents			78
+ #define __NR_getcwd				79
+ #define __NR_chdir				80
+ #define __NR_fchdir				81
+-#define __NR_rename				82
+-#define __NR_mkdir				83
+-#define __NR_rmdir				84
+-#define __NR_creat				85
+-#define __NR_link				86
+-#define __NR_unlink				87
+-#define __NR_symlink			88
+-#define __NR_readlink			89
+-#define __NR_chmod				90
+ #define __NR_fchmod				91
+-#define __NR_chown				92
+ #define __NR_fchown				93
+-#define __NR_lchown				94
+ #define __NR_umask				95
+ #define __NR_gettimeofday		96
+ #define __NR_getrlimit			97
+@@ -109,7 +86,6 @@
+ #define __NR_getegid			108
+ #define __NR_setpgid			109
+ #define __NR_getppid			110
+-#define __NR_getpgrp			111
+ #define __NR_setsid				112
+ #define __NR_setreuid			113
+ #define __NR_setregid			114
+@@ -130,14 +106,9 @@
+ #define __NR_rt_sigqueueinfo	129
+ #define __NR_rt_sigsuspend		130
+ #define __NR_sigaltstack		131
+-#define __NR_utime				132
+-#define __NR_mknod				133
+-#define __NR_uselib				134
+ #define __NR_personality		135
+-#define __NR_ustat				136
+ #define __NR_statfs				137
+ #define __NR_fstatfs			138
+-#define __NR_sysfs				139
+ #define __NR_getpriority			140
+ #define __NR_setpriority			141
+ #define __NR_sched_setparam			142
+@@ -154,7 +125,6 @@
+ #define __NR_vhangup				153
+ #define __NR_modify_ldt				154
+ #define __NR_pivot_root				155
+-#define __NR__sysctl				156
+ #define __NR_prctl					157
+ #define __NR_arch_prctl				158
+ #define __NR_adjtimex				159
+@@ -199,7 +169,6 @@
+ #define __NR_lremovexattr			198
+ #define __NR_fremovexattr			199
+ #define __NR_tkill					200
+-#define __NR_time					201
+ #define __NR_futex					202
+ #define __NR_sched_setaffinity		203
+ #define __NR_sched_getaffinity		204
+@@ -211,9 +180,6 @@
+ #define __NR_io_cancel				210
+ #define __NR_get_thread_area		211
+ #define __NR_lookup_dcookie			212
+-#define __NR_epoll_create			213
+-#define __NR_epoll_ctl_old			214
+-#define __NR_epoll_wait_old			215
+ #define __NR_remap_file_pages		216
+ #define __NR_getdents64				217
+ #define __NR_set_tid_address		218
+@@ -230,10 +196,8 @@
+ #define __NR_clock_getres			229
+ #define __NR_clock_nanosleep		230
+ #define __NR_exit_group				231
+-#define __NR_epoll_wait				232
+ #define __NR_epoll_ctl				233
+ #define __NR_tgkill					234
+-#define __NR_utimes					235
+ #define __NR_vserver				236
+ #define __NR_mbind					237
+ #define __NR_set_mempolicy			238
+@@ -251,7 +215,6 @@
+ #define __NR_keyctl					250
+ #define __NR_ioprio_set				251
+ #define __NR_ioprio_get				252
+-#define __NR_inotify_init			253
+ #define __NR_inotify_add_watch		254
+ #define __NR_inotify_rm_watch		255
+ #define __NR_migrate_pages			256
+@@ -259,7 +222,6 @@
+ #define __NR_mkdirat				258
+ #define __NR_mknodat				259
+ #define __NR_fchownat				260
+-#define __NR_futimesat				261
+ #define __NR_newfstatat				262
+ #define __NR_unlinkat				263
+ #define __NR_renameat				264
+@@ -280,9 +242,7 @@
+ #define __NR_move_pages				279
+ #define __NR_utimensat				280
+ #define __NR_epoll_pwait			281
+-#define __NR_signalfd				282
+ #define __NR_timerfd_create			283
+-#define __NR_eventfd				284
+ #define __NR_fallocate				285
+ #define __NR_timerfd_settime		286
+ #define __NR_timerfd_gettime		287
+diff -ruN musl-1.2.5.orig/src/internal/android_sandbox.h musl-1.2.5/src/internal/android_sandbox.h
+--- musl-1.2.5.orig/src/internal/android_sandbox.h	1970-01-01 00:00:00.000000000 +0000
++++ musl-1.2.5/src/internal/android_sandbox.h	2026-11-25 16:23:23.948200811 +0000
+@@ -0,0 +1,14 @@
++#ifndef ANDROID_SANDBOX_H
++#define ANDROID_SANDBOX_H
++
++#include <errno.h>
++#include "syscall.h"
++
++/* Root-only syscalls are on the Android app seccomp blocklist: issuing one
++ * raises SIGSYS instead of failing. An unprivileged caller would get EPERM
++ * from the kernel anyway, so report that without entering the kernel. */
++#define DENY_UNLESS_ROOT() do { \
++	if (__syscall(SYS_geteuid)) return __syscall_ret(-EPERM); \
++} while (0)
++
++#endif
+diff -ruN musl-1.2.5.orig/src/internal/etc_path.c musl-1.2.5/src/internal/etc_path.c
+--- musl-1.2.5.orig/src/internal/etc_path.c	1970-01-01 00:00:00.000000000 +0000
++++ musl-1.2.5/src/internal/etc_path.c	2026-11-25 16:23:23.944200811 +0000
+@@ -0,0 +1,31 @@
++#include <stdlib.h>
++#include <string.h>
++#include "libc.h"
++#include "etc_path.h"
++
++const char *__etc_path(const char *def, char *buf)
++{
++	const char *dir, *name;
++	size_t dl, nl;
++
++	if (libc.secure) return def;
++	dir = getenv("MUSL_ETC");
++	if (!dir || dir[0] != '/') return def;
++	name = strrchr(def, '/');
++	dl = strlen(dir);
++	nl = strlen(name);
++	if (dl + nl >= ETC_PATH_MAX) return def;
++	memcpy(buf, dir, dl);
++	memcpy(buf + dl, name, nl + 1);
++	return buf;
++}
++
++const char *__shell_path(void)
++{
++	const char *sh;
++
++	if (libc.secure) return "/bin/sh";
++	sh = getenv("MUSL_SHELL");
++	if (!sh || sh[0] != '/') return "/bin/sh";
++	return sh;
++}
+diff -ruN musl-1.2.5.orig/src/internal/etc_path.h musl-1.2.5/src/internal/etc_path.h
+--- musl-1.2.5.orig/src/internal/etc_path.h	1970-01-01 00:00:00.000000000 +0000
++++ musl-1.2.5/src/internal/etc_path.h	2026-11-25 16:23:23.944200811 +0000
+@@ -0,0 +1,17 @@
++#ifndef ETC_PATH_H
++#define ETC_PATH_H
++
++#include <features.h>
++
++/* Android has no /etc. When MUSL_ETC names a directory, the files libc
++ * normally reads from /etc (resolv.conf, hosts, services, passwd, group)
++ * are looked up there instead. Ignored for set-id programs. */
++#define ETC_PATH_MAX 256
++
++hidden const char *__etc_path(const char *def, char *buf);
++
++/* Shell used by system(), popen() and wordexp(). MUSL_SHELL overrides
++ * /bin/sh, which does not exist before Android 9. */
++hidden const char *__shell_path(void);
++
++#endif
+diff -ruN musl-1.2.5.orig/src/linux/chroot.c musl-1.2.5/src/linux/chroot.c
+--- musl-1.2.5.orig/src/linux/chroot.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/chroot.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,8 +1,10 @@
+ #define _GNU_SOURCE
+ #include <unistd.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ int chroot(const char *path)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_chroot, path);
+ }
+diff -ruN musl-1.2.5.orig/src/linux/clock_adjtime.c musl-1.2.5/src/linux/clock_adjtime.c
+--- musl-1.2.5.orig/src/linux/clock_adjtime.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/clock_adjtime.c	2026-11-25 16:23:23.948200811 +0000
+@@ -2,6 +2,7 @@
+ #include <time.h>
+ #include <errno.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ #define IS32BIT(x) !((x)+0x80000000ULL>>32)
+ 
+@@ -36,6 +37,7 @@
+ 
+ int clock_adjtime (clockid_t clock_id, struct timex *utx)
+ {
++	DENY_UNLESS_ROOT();
+ 	int r = -ENOSYS;
+ #ifdef SYS_clock_adjtime64
+ 	struct ktimex64 ktx = {
+diff -ruN musl-1.2.5.orig/src/linux/klogctl.c musl-1.2.5/src/linux/klogctl.c
+--- musl-1.2.5.orig/src/linux/klogctl.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/klogctl.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,7 +1,9 @@
+ #include <sys/klog.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ int klogctl (int type, char *buf, int len)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_syslog, type, buf, len);
+ }
+diff -ruN musl-1.2.5.orig/src/linux/membarrier.c musl-1.2.5/src/linux/membarrier.c
+--- musl-1.2.5.orig/src/linux/membarrier.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/membarrier.c	2026-11-25 16:23:23.948200811 +0000
+@@ -21,7 +21,9 @@
+ 
+ int __membarrier(int cmd, int flags)
+ {
+-	int r = __syscall(SYS_membarrier, cmd, flags);
++	/* Android: the syscall is not on the app seccomp allowlist before
++	 * Android 10, so never issue it; use the in-process emulation below. */
++	int r = -ENOSYS;
+ 	/* Emulate the private expedited command, which is needed by the
+ 	 * dynamic linker for installation of dynamic TLS, for older
+ 	 * kernels that lack the syscall. Unlike the syscall, this only
+@@ -66,7 +68,7 @@
+ 	 * to the application to do so if desired. Unfortunately this means
+ 	 * library code initialized after the process becomes multi-threaded
+ 	 * cannot use these features without accepting registration latency. */
+-	__syscall(SYS_membarrier, MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, 0);
++	/* Android: nothing to pre-register, see __membarrier above. */
+ }
+ 
+ weak_alias(__membarrier, membarrier);
+diff -ruN musl-1.2.5.orig/src/linux/module.c musl-1.2.5/src/linux/module.c
+--- musl-1.2.5.orig/src/linux/module.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/module.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,11 +1,14 @@
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ int init_module(void *a, unsigned long b, const char *c)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_init_module, a, b, c);
+ }
+ 
+ int delete_module(const char *a, unsigned b)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_delete_module, a, b);
+ }
+diff -ruN musl-1.2.5.orig/src/linux/mount.c musl-1.2.5/src/linux/mount.c
+--- musl-1.2.5.orig/src/linux/mount.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/mount.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,17 +1,21 @@
+ #include <sys/mount.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ int mount(const char *special, const char *dir, const char *fstype, unsigned long flags, const void *data)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_mount, special, dir, fstype, flags, data);
+ }
+ 
+ int umount(const char *special)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_umount2, special, 0);
+ }
+ 
+ int umount2(const char *special, int flags)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_umount2, special, flags);
+ }
+diff -ruN musl-1.2.5.orig/src/linux/reboot.c musl-1.2.5/src/linux/reboot.c
+--- musl-1.2.5.orig/src/linux/reboot.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/reboot.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,7 +1,9 @@
+ #include <sys/reboot.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ int reboot(int type)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_reboot, 0xfee1dead, 672274793, type);
+ }
+diff -ruN musl-1.2.5.orig/src/linux/setfsgid.c musl-1.2.5/src/linux/setfsgid.c
+--- musl-1.2.5.orig/src/linux/setfsgid.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/setfsgid.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,7 +1,9 @@
+ #include <sys/fsuid.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ int setfsgid(gid_t gid)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_setfsgid, gid);
+ }
+diff -ruN musl-1.2.5.orig/src/linux/setfsuid.c musl-1.2.5/src/linux/setfsuid.c
+--- musl-1.2.5.orig/src/linux/setfsuid.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/setfsuid.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,7 +1,9 @@
+ #include <sys/fsuid.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ int setfsuid(uid_t uid)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_setfsuid, uid);
+ }
+diff -ruN musl-1.2.5.orig/src/linux/setgroups.c musl-1.2.5/src/linux/setgroups.c
+--- musl-1.2.5.orig/src/linux/setgroups.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/setgroups.c	2026-11-25 16:23:23.948200811 +0000
+@@ -26,8 +26,25 @@
+ 	c->ret = ret;
+ }
+ 
++/* See setxid.c: setgroups is on the same Android blocklist. Installing the
++ * list that is already in place is answered without a syscall. */
++static int is_noop(size_t count, const gid_t list[])
++{
++	gid_t cur[64];
++	size_t i, j;
++	int n = __syscall(SYS_getgroups, 64, cur);
++
++	if (n < 0 || (size_t)n != count) return 0;
++	for (i = 0; i < count; i++) {
++		for (j = 0; j < count && cur[j] != list[i]; j++);
++		if (j == count) return 0;
++	}
++	return 1;
++}
++
+ int setgroups(size_t count, const gid_t list[])
+ {
++	if (is_noop(count, list)) return 0;
+ 	/* ret is initially nonzero so that failure of the first thread does not
+ 	 * trigger the safety kill above. */
+ 	struct ctx c = { .count = count, .list = list, .ret = 1 };
+diff -ruN musl-1.2.5.orig/src/linux/sethostname.c musl-1.2.5/src/linux/sethostname.c
+--- musl-1.2.5.orig/src/linux/sethostname.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/sethostname.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,8 +1,10 @@
+ #define _GNU_SOURCE
+ #include <unistd.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ int sethostname(const char *name, size_t len)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_sethostname, name, len);
+ }
+diff -ruN musl-1.2.5.orig/src/linux/swap.c musl-1.2.5/src/linux/swap.c
+--- musl-1.2.5.orig/src/linux/swap.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/linux/swap.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,12 +1,15 @@
+ #include <sys/swap.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ int swapon(const char *path, int flags)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_swapon, path, flags);
+ }
+ 
+ int swapoff(const char *path)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_swapoff, path);
+ }
+diff -ruN musl-1.2.5.orig/src/misc/setdomainname.c musl-1.2.5/src/misc/setdomainname.c
+--- musl-1.2.5.orig/src/misc/setdomainname.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/misc/setdomainname.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,8 +1,10 @@
+ #define _GNU_SOURCE
+ #include <unistd.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ int setdomainname(const char *name, size_t len)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_setdomainname, name, len);
+ }
+diff -ruN musl-1.2.5.orig/src/misc/wordexp.c musl-1.2.5/src/misc/wordexp.c
+--- musl-1.2.5.orig/src/misc/wordexp.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/misc/wordexp.c	2026-11-25 16:23:23.948200811 +0000
+@@ -10,6 +10,7 @@
+ #include <errno.h>
+ #include <fcntl.h>
+ #include "pthread_impl.h"
++#include "etc_path.h"
+ 
+ static void reap(pid_t pid)
+ {
+@@ -108,7 +109,7 @@
+ 	if (!pid) {
+ 		if (p[1] == 1) fcntl(1, F_SETFD, 0);
+ 		else dup2(p[1], 1);
+-		execl("/bin/sh", "sh", "-c",
++		execl(__shell_path(), "sh", "-c",
+ 			"eval \"printf %s\\\\\\\\0 x $1 $2\"",
+ 			"sh", s, redir, (char *)0);
+ 		_exit(1);
+diff -ruN musl-1.2.5.orig/src/network/getnameinfo.c musl-1.2.5/src/network/getnameinfo.c
+--- musl-1.2.5.orig/src/network/getnameinfo.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/network/getnameinfo.c	2026-11-25 16:23:23.948200811 +0000
+@@ -11,6 +11,7 @@
+ #include <resolv.h>
+ #include "lookup.h"
+ #include "stdio_impl.h"
++#include "etc_path.h"
+ 
+ #define PTR_MAX (64 + sizeof ".in-addr.arpa")
+ #define RR_PTR 12
+@@ -47,7 +48,7 @@
+ 	char line[512], *p, *z;
+ 	unsigned char _buf[1032], atmp[16];
+ 	struct address iplit;
+-	FILE _f, *f = __fopen_rb_ca("/etc/hosts", &_f, _buf, sizeof _buf);
++	FILE _f, *f = __fopen_rb_ca(__etc_path("/etc/hosts", (char [ETC_PATH_MAX]){0}), &_f, _buf, sizeof _buf);
+ 	if (!f) return;
+ 	if (family == AF_INET) {
+ 		memcpy(atmp+12, a, 4);
+@@ -88,7 +89,7 @@
+ 	unsigned long svport;
+ 	char line[128], *p, *z;
+ 	unsigned char _buf[1032];
+-	FILE _f, *f = __fopen_rb_ca("/etc/services", &_f, _buf, sizeof _buf);
++	FILE _f, *f = __fopen_rb_ca(__etc_path("/etc/services", (char [ETC_PATH_MAX]){0}), &_f, _buf, sizeof _buf);
+ 	if (!f) return;
+ 	while (fgets(line, sizeof line, f)) {
+ 		if ((p=strchr(line, '#'))) *p++='\n', *p=0;
+diff -ruN musl-1.2.5.orig/src/network/lookup_name.c musl-1.2.5/src/network/lookup_name.c
+--- musl-1.2.5.orig/src/network/lookup_name.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/network/lookup_name.c	2026-11-25 16:23:23.944200811 +0000
+@@ -14,6 +14,7 @@
+ #include "lookup.h"
+ #include "stdio_impl.h"
+ #include "syscall.h"
++#include "etc_path.h"
+ 
+ static int is_valid_hostname(const char *host)
+ {
+@@ -52,7 +53,7 @@
+ 	size_t l = strlen(name);
+ 	int cnt = 0, badfam = 0, have_canon = 0;
+ 	unsigned char _buf[1032];
+-	FILE _f, *f = __fopen_rb_ca("/etc/hosts", &_f, _buf, sizeof _buf);
++	FILE _f, *f = __fopen_rb_ca(__etc_path("/etc/hosts", (char [ETC_PATH_MAX]){0}), &_f, _buf, sizeof _buf);
+ 	if (!f) switch (errno) {
+ 	case ENOENT:
+ 	case ENOTDIR:
+diff -ruN musl-1.2.5.orig/src/network/lookup_serv.c musl-1.2.5/src/network/lookup_serv.c
+--- musl-1.2.5.orig/src/network/lookup_serv.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/network/lookup_serv.c	2026-11-25 16:23:23.944200811 +0000
+@@ -8,6 +8,7 @@
+ #include <errno.h>
+ #include "lookup.h"
+ #include "stdio_impl.h"
++#include "etc_path.h"
+ 
+ int __lookup_serv(struct service buf[static MAXSERVS], const char *name, int proto, int socktype, int flags)
+ {
+@@ -70,7 +71,7 @@
+ 	size_t l = strlen(name);
+ 
+ 	unsigned char _buf[1032];
+-	FILE _f, *f = __fopen_rb_ca("/etc/services", &_f, _buf, sizeof _buf);
++	FILE _f, *f = __fopen_rb_ca(__etc_path("/etc/services", (char [ETC_PATH_MAX]){0}), &_f, _buf, sizeof _buf);
+ 	if (!f) switch (errno) {
+ 	case ENOENT:
+ 	case ENOTDIR:
+diff -ruN musl-1.2.5.orig/src/network/resolvconf.c musl-1.2.5/src/network/resolvconf.c
+--- musl-1.2.5.orig/src/network/resolvconf.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/network/resolvconf.c	2026-11-25 16:23:23.944200811 +0000
+@@ -5,6 +5,7 @@
+ #include <string.h>
+ #include <stdlib.h>
+ #include <netinet/in.h>
++#include "etc_path.h"
+ 
+ int __get_resolv_conf(struct resolvconf *conf, char *search, size_t search_sz)
+ {
+@@ -18,7 +19,7 @@
+ 	conf->attempts = 2;
+ 	if (search) *search = 0;
+ 
+-	f = __fopen_rb_ca("/etc/resolv.conf", &_f, _buf, sizeof _buf);
++	f = __fopen_rb_ca(__etc_path("/etc/resolv.conf", (char [ETC_PATH_MAX]){0}), &_f, _buf, sizeof _buf);
+ 	if (!f) switch (errno) {
+ 	case ENOENT:
+ 	case ENOTDIR:
+diff -ruN musl-1.2.5.orig/src/passwd/getgr_a.c musl-1.2.5/src/passwd/getgr_a.c
+--- musl-1.2.5.orig/src/passwd/getgr_a.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/passwd/getgr_a.c	2026-11-25 16:23:23.948200811 +0000
+@@ -4,6 +4,7 @@
+ #include <unistd.h>
+ #include "pwf.h"
+ #include "nscd.h"
++#include "etc_path.h"
+ 
+ static char *itoa(char *p, uint32_t x)
+ {
+@@ -26,7 +27,7 @@
+ 	*res = 0;
+ 
+ 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cs);
+-	f = fopen("/etc/group", "rbe");
++	f = fopen(__etc_path("/etc/group", (char [ETC_PATH_MAX]){0}), "rbe");
+ 	if (!f) {
+ 		rv = errno;
+ 		goto done;
+diff -ruN musl-1.2.5.orig/src/passwd/getgrent.c musl-1.2.5/src/passwd/getgrent.c
+--- musl-1.2.5.orig/src/passwd/getgrent.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/passwd/getgrent.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,4 +1,5 @@
+ #include "pwf.h"
++#include "etc_path.h"
+ 
+ static FILE *f;
+ static char *line, **mem;
+@@ -16,7 +17,7 @@
+ {
+ 	struct group *res;
+ 	size_t size=0, nmem=0;
+-	if (!f) f = fopen("/etc/group", "rbe");
++	if (!f) f = fopen(__etc_path("/etc/group", (char [ETC_PATH_MAX]){0}), "rbe");
+ 	if (!f) return 0;
+ 	__getgrent_a(f, &gr, &line, &size, &mem, &nmem, &res);
+ 	return res;
+diff -ruN musl-1.2.5.orig/src/passwd/getgrouplist.c musl-1.2.5/src/passwd/getgrouplist.c
+--- musl-1.2.5.orig/src/passwd/getgrouplist.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/passwd/getgrouplist.c	2026-11-25 16:23:23.948200811 +0000
+@@ -8,6 +8,7 @@
+ #include <byteswap.h>
+ #include <errno.h>
+ #include "nscd.h"
++#include "etc_path.h"
+ 
+ int getgrouplist(const char *user, gid_t gid, gid_t *groups, int *ngroups)
+ {
+@@ -43,7 +44,7 @@
+ 	}
+ 	fclose(f);
+ 
+-	f = fopen("/etc/group", "rbe");
++	f = fopen(__etc_path("/etc/group", (char [ETC_PATH_MAX]){0}), "rbe");
+ 	if (!f && errno != ENOENT && errno != ENOTDIR)
+ 		goto cleanup;
+ 
+diff -ruN musl-1.2.5.orig/src/passwd/getpw_a.c musl-1.2.5/src/passwd/getpw_a.c
+--- musl-1.2.5.orig/src/passwd/getpw_a.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/passwd/getpw_a.c	2026-11-25 16:23:23.948200811 +0000
+@@ -4,6 +4,7 @@
+ #include <unistd.h>
+ #include "pwf.h"
+ #include "nscd.h"
++#include "etc_path.h"
+ 
+ static char *itoa(char *p, uint32_t x)
+ {
+@@ -27,7 +28,7 @@
+ 
+ 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cs);
+ 
+-	f = fopen("/etc/passwd", "rbe");
++	f = fopen(__etc_path("/etc/passwd", (char [ETC_PATH_MAX]){0}), "rbe");
+ 	if (!f) {
+ 		rv = errno;
+ 		goto done;
+diff -ruN musl-1.2.5.orig/src/passwd/getpwent.c musl-1.2.5/src/passwd/getpwent.c
+--- musl-1.2.5.orig/src/passwd/getpwent.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/passwd/getpwent.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,4 +1,5 @@
+ #include "pwf.h"
++#include "etc_path.h"
+ 
+ static FILE *f;
+ static char *line;
+@@ -16,7 +17,7 @@
+ struct passwd *getpwent()
+ {
+ 	struct passwd *res;
+-	if (!f) f = fopen("/etc/passwd", "rbe");
++	if (!f) f = fopen(__etc_path("/etc/passwd", (char [ETC_PATH_MAX]){0}), "rbe");
+ 	if (!f) return 0;
+ 	__getpwent_a(f, &pw, &line, &size, &res);
+ 	return res;
+diff -ruN musl-1.2.5.orig/src/process/system.c musl-1.2.5/src/process/system.c
+--- musl-1.2.5.orig/src/process/system.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/process/system.c	2026-11-25 16:23:23.948200811 +0000
+@@ -5,6 +5,7 @@
+ #include <spawn.h>
+ #include <errno.h>
+ #include "pthread_impl.h"
++#include "etc_path.h"
+ 
+ extern char **__environ;
+ 
+@@ -32,7 +33,7 @@
+ 	posix_spawnattr_setsigmask(&attr, &old);
+ 	posix_spawnattr_setsigdefault(&attr, &reset);
+ 	posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF|POSIX_SPAWN_SETSIGMASK);
+-	ret = posix_spawn(&pid, "/bin/sh", 0, &attr,
++	ret = posix_spawn(&pid, __shell_path(), 0, &attr,
+ 		(char *[]){"sh", "-c", (char *)cmd, 0}, __environ);
+ 	posix_spawnattr_destroy(&attr);
+ 
+diff -ruN musl-1.2.5.orig/src/stdio/popen.c musl-1.2.5/src/stdio/popen.c
+--- musl-1.2.5.orig/src/stdio/popen.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/stdio/popen.c	2026-11-25 16:23:23.948200811 +0000
+@@ -5,6 +5,7 @@
+ #include <spawn.h>
+ #include "stdio_impl.h"
+ #include "syscall.h"
++#include "etc_path.h"
+ 
+ extern char **__environ;
+ 
+@@ -38,7 +39,7 @@
+ 			if (l->pipe_pid && posix_spawn_file_actions_addclose(&fa, l->fd))
+ 				goto fail;
+ 		if (!posix_spawn_file_actions_adddup2(&fa, p[1-op], 1-op)) {
+-			if (!(e = posix_spawn(&pid, "/bin/sh", &fa, 0,
++			if (!(e = posix_spawn(&pid, __shell_path(), &fa, 0,
+ 			    (char *[]){ "sh", "-c", (char *)cmd, 0 }, __environ))) {
+ 				posix_spawn_file_actions_destroy(&fa);
+ 				f->pipe_pid = pid;
+diff -ruN musl-1.2.5.orig/src/time/clock_settime.c musl-1.2.5/src/time/clock_settime.c
+--- musl-1.2.5.orig/src/time/clock_settime.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/time/clock_settime.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,11 +1,13 @@
+ #include <time.h>
+ #include <errno.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ #define IS32BIT(x) !((x)+0x80000000ULL>>32)
+ 
+ int clock_settime(clockid_t clk, const struct timespec *ts)
+ {
++	DENY_UNLESS_ROOT();
+ #ifdef SYS_clock_settime64
+ 	time_t s = ts->tv_sec;
+ 	long ns = ts->tv_nsec;
+diff -ruN musl-1.2.5.orig/src/unistd/acct.c musl-1.2.5/src/unistd/acct.c
+--- musl-1.2.5.orig/src/unistd/acct.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/unistd/acct.c	2026-11-25 16:23:23.948200811 +0000
+@@ -1,8 +1,10 @@
+ #define _GNU_SOURCE
+ #include <unistd.h>
+ #include "syscall.h"
++#include "android_sandbox.h"
+ 
+ int acct(const char *filename)
+ {
++	DENY_UNLESS_ROOT();
+ 	return syscall(SYS_acct, filename);
+ }
+diff -ruN musl-1.2.5.orig/src/unistd/setxid.c musl-1.2.5/src/unistd/setxid.c
+--- musl-1.2.5.orig/src/unistd/setxid.c	2024-03-01 02:07:33.000000000 +0000
++++ musl-1.2.5/src/unistd/setxid.c	2026-11-25 16:23:23.948200811 +0000
+@@ -24,8 +24,47 @@
+ 	c->ret = ret;
+ }
+ 
++/* The Android app seccomp filter kills (SIGSYS) a process that issues any
++ * set*id syscall, even one that would change nothing. "Drop privileges to
++ * the ids I already have" is a common idiom, so answer it without a syscall. */
++static int is_noop(int nr, int id, int eid, int sid)
++{
++	unsigned r, e, s;
++
++	switch (nr) {
++	case SYS_setuid:
++	case SYS_setreuid:
++	case SYS_setresuid:
++		if (__syscall(SYS_getresuid, &r, &e, &s)) return 0;
++		break;
++	case SYS_setgid:
++	case SYS_setregid:
++	case SYS_setresgid:
++		if (__syscall(SYS_getresgid, &r, &e, &s)) return 0;
++		break;
++	default:
++		return 0;
++	}
++	if (r != e || e != s) return 0;
++
++	switch (nr) {
++	case SYS_setuid:
++	case SYS_setgid:
++		return (unsigned)id == r;
++	case SYS_setreuid:
++	case SYS_setregid:
++		return (id == -1 || (unsigned)id == r)
++			&& (eid == -1 || (unsigned)eid == r);
++	default:
++		return (id == -1 || (unsigned)id == r)
++			&& (eid == -1 || (unsigned)eid == r)
++			&& (sid == -1 || (unsigned)sid == r);
++	}
++}
++
+ int __setxid(int nr, int id, int eid, int sid)
+ {
++	if (is_noop(nr, id, eid, sid)) return 0;
+ 	/* ret is initially nonzero so that failure of the first thread does not
+ 	 * trigger the safety kill above. */
+ 	struct ctx c = { .nr = nr, .id = id, .eid = eid, .sid = sid, .ret = 1 };

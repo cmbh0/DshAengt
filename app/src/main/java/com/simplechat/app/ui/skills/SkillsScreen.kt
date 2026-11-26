@@ -1,5 +1,7 @@
 package com.simplechat.app.ui.skills
 
+import com.simplechat.app.ui.common.relayClick
+import com.simplechat.app.ui.common.bounceHost
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -145,6 +147,7 @@ fun SkillsScreen(onBack: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .bounceHost()
                     // 圆角与设置里其它卡片同一个值（此前这张是 14dp，比别的页大一圈）
                     .clip(RoundedCornerShape(SettingsDimens.CardCorner))
                     .background(colors.card),
@@ -237,7 +240,7 @@ private fun SkillRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpen)
+            .relayClick(onClick = onOpen)
             .padding(start = 14.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -318,7 +321,7 @@ private fun ActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .relayClick(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

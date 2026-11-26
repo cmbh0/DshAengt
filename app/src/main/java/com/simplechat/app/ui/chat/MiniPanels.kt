@@ -1,6 +1,5 @@
 package com.simplechat.app.ui.chat
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,14 +31,10 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,19 +44,11 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simplechat.app.R
@@ -126,10 +112,6 @@ fun ModelMiniPanel(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalChatColors.current
-    // 与 InputPanels 一致：思考开关不再受模型目录白名单限制
-    val supportsThinking = true
-    val thinkingOn = settings.thinkingEnabled
-    val effort = settings.reasoningLevel.takeIf { it.enabled } ?: ReasoningLevel.default
 
     /*
      * 按家族分组。
@@ -193,9 +175,6 @@ fun ModelMiniPanel(
             },
         )
     }
-
-    /* 模型参数默认收起：它改的是"怎么想"，不是"用哪个"，不该抢模型列表的位置。 */
-    var paramsOpen by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxWidth()) {
 
@@ -411,283 +390,10 @@ fun ModelMiniPanel(
             }
         }
 
-        MiniDivider()
-
         /*
-         * ── 模型参数（折叠）────────────────────────────────
-         *
-         * 原来"思考开关 + 五格滑块"常驻在列表下面，占了纸片一半的高度 ——
-         * 而换模型和调思考档位是**两件事**，前者每次都做，后者偶尔做。
-         * 收成一行，标题右侧直接写出当前档位（"思考 · 中"），不点开也知道。
+         * 思考开关与档位不在这张纸片里了：它们搬到了输入栏右侧那颗「思考强度」
+         * 按钮上（见 ReasoningCard.kt）。这里只管「用哪个模型」。
          */
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 34.dp)
-                .clip(SoftShape)
-                .clickable { paramsOpen = !paramsOpen }
-                .padding(horizontal = 8.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = AppIcons.Sliders,
-                contentDescription = null,
-                tint = colors.processText,
-                modifier = Modifier.size(14.dp),
-            )
-            Spacer(Modifier.width(7.dp))
-            Text(
-                text = stringResource(R.string.model_params),
-                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
-                color = colors.processText,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = when {
-                    !supportsThinking -> stringResource(R.string.input_model_unsupported)
-                    thinkingOn -> stringResource(R.string.model_params_on, effort.label)
-                    else -> stringResource(R.string.model_params_off)
-                },
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                color = colors.placeholder,
-            )
-            Spacer(Modifier.width(4.dp))
-            Icon(
-                imageVector = AppIcons.ChevronDown,
-                contentDescription = null,
-                tint = colors.placeholder,
-                modifier = Modifier
-                    .size(12.dp)
-                    .rotate(if (paramsOpen) 180f else 0f),
-            )
-        }
-
-        AnimatedVisibility(
-            visible = paramsOpen,
-            enter = expandVertically(tween(170)) + fadeIn(tween(120)),
-            exit = shrinkVertically(tween(150)) + fadeOut(tween(90)),
-        ) {
-            Column {
-                // ── 思考：开关 + 五格 ────────────────────────
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.model_panel_thinking_mode),
-                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
-                        color = if (supportsThinking) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            colors.placeholder
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = if (supportsThinking) effort.label else "—",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                        color = colors.placeholder,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    AppSwitch(
-                        checked = thinkingOn,
-                        onCheckedChange = { on ->
-                            if (supportsThinking) {
-                                onSettingsChange(
-                                    settings.copy(
-                                        reasoningLevel = if (on) ReasoningLevel.default else ReasoningLevel.OFF,
-                                    ),
-                                )
-                            }
-                        },
-                        enabled = supportsThinking,
-                    )
-                }
-
-                MiniEffortSlider(
-                    value = ReasoningLevel.sliderPositionOf(effort).toFloat(),
-                    labels = ReasoningLevel.sliderOrder.map { it.label },
-                    enabled = thinkingOn && supportsThinking,
-                    onValueChange = { raw ->
-                        onSettingsChange(
-                            settings.copy(reasoningLevel = ReasoningLevel.fromSliderPosition(raw.roundToInt())),
-                        )
-                    },
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                )
-
-            }
-        }
-    }
-}
-
-/**
- * 迷你五点滑块。
- *
- * 和 `InputPanels.EffortSlider` 是同一套画法（细轨 + 五点，选中点胀成实心、
- * 中心留白），只是**缩了一档**：轨道高 20dp、旋钮 6dp、点 2dp、标签 10sp。
- * 浮层宽 264，五格每格 60dp，仍然分得清。
- */
-@Composable
-private fun MiniEffortSlider(
-    value: Float,
-    labels: List<String>,
-    enabled: Boolean,
-    onValueChange: (Float) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = LocalChatColors.current
-    val density = LocalDensity.current
-    var dragging by remember { mutableStateOf(false) }
-
-    val lastIndex = (labels.size - 1).coerceAtLeast(1)
-    val accent = MaterialTheme.colorScheme.onSurface
-    val idle = colors.outline
-    val edge = with(density) { 7.dp.toPx() }
-    val knob = with(density) { 6.dp.toPx() }
-    val dot = with(density) { 2.dp.toPx() }
-
-    /*
-     * 旋钮位置是**连续量**，不是档位序号。
-     *
-     * 早先每次移动都 `roundToInt()` 再回传给上层，旋钮只能在五个点上跳 ——
-     * 手指在中间走，旋钮一格一格地蹦，手感就是"卡卡的"。
-     * 现在：拖动时旋钮严格跟手（snap 到手指），只有**跨过格线**才提交一次档位；
-     * 松手再补一段 120ms 的吸附动画。档位仍是离散的（模型只认五档），
-     * 但手指看到的是连续移动。
-     */
-    var fraction by remember { mutableStateOf(value) }
-    var lastSent by remember { mutableStateOf(value.roundToInt()) }
-
-    LaunchedEffect(value, dragging) {
-        if (!dragging) {
-            fraction = value
-            lastSent = value.roundToInt()
-        }
-    }
-
-    val knobPosition by animateFloatAsState(
-        targetValue = if (dragging) fraction else value,
-        animationSpec = if (dragging) snap() else tween(120),
-        label = "effortKnob",
-    )
-
-    // 与 AppSlider 同一个坑：拖过一次后父级换了状态实例，旧闭包就写不动了
-    val changeCallback by rememberUpdatedState(onValueChange)
-
-    fun emitAt(x: Float, totalWidth: Float) {
-        if (totalWidth <= 0f) return
-        val usable = (totalWidth - edge * 2f).coerceAtLeast(1f)
-        val raw = ((x - edge) / usable).coerceIn(0f, 1f) * lastIndex
-        fraction = raw
-        val index = raw.roundToInt()
-        if (index != lastSent) {
-            lastSent = index
-            changeCallback(index.toFloat())
-        }
-    }
-
-    Column(modifier = modifier.fillMaxWidth()) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(22.dp)
-                .pointerInput(enabled) {
-                    if (!enabled) return@pointerInput
-                    awaitEachGesture {
-                        val down = awaitFirstDown()
-                        val total = size.width.toFloat()
-                        dragging = true
-                        emitAt(down.position.x, total)
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) break
-                            emitAt(change.position.x, total)
-                            change.consume()
-                        }
-                        dragging = false
-                    }
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Canvas(modifier = Modifier.fillMaxWidth().height(22.dp)) {
-                val cy = size.height / 2f
-                val startX = edge
-                val endX = size.width - edge
-                val step = (endX - startX) / lastIndex
-                val knobX = startX + step * knobPosition
-
-                drawLine(
-                    color = if (enabled) idle else idle.copy(alpha = 0.5f),
-                    start = Offset(startX, cy),
-                    end = Offset(endX, cy),
-                    strokeWidth = 1.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
-                if (knobPosition > 0f && enabled) {
-                    drawLine(
-                        color = accent.copy(alpha = 0.55f),
-                        start = Offset(startX, cy),
-                        end = Offset(knobX, cy),
-                        strokeWidth = 1.dp.toPx(),
-                        cap = StrokeCap.Round,
-                    )
-                }
-                repeat(labels.size) { index ->
-                    val cx = startX + step * index
-                    if (index == knobPosition.roundToInt()) {
-                        // 选中点隐在旋钮下面：旋钮本身已经说明了"现在在这儿"
-                    } else {
-                        drawCircle(
-                            color = if (enabled) idle else idle.copy(alpha = 0.5f),
-                            radius = dot,
-                            center = Offset(cx, cy),
-                        )
-                    }
-                }
-                // 旋钮最后画，永远压在最上层，拖动时不会被格点切开
-                drawCircle(
-                    color = if (enabled) accent else idle,
-                    radius = if (dragging) knob + 1.dp.toPx() else knob,
-                    center = Offset(knobX, cy),
-                )
-                drawCircle(
-                    color = colors.menuBackground,
-                    radius = dot,
-                    center = Offset(knobX, cy),
-                )
-            }
-        }
-
-        var totalWidth by remember { mutableStateOf(0) }
-        val labelWidths = remember { mutableStateMapOf<Int, Int>() }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(13.dp)
-                .onSizeChanged { totalWidth = it.width },
-        ) {
-            labels.forEachIndexed { index, text ->
-                val labelWidth = labelWidths[index] ?: 0
-                val tickX = edge + (totalWidth - edge * 2f) * (index.toFloat() / lastIndex)
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = when {
-                        !enabled -> colors.placeholder.copy(alpha = 0.6f)
-                        index == knobPosition.roundToInt() -> MaterialTheme.colorScheme.onSurface
-                        else -> colors.placeholder
-                    },
-                    maxLines = 1,
-                    modifier = Modifier
-                        .offset { IntOffset((tickX - labelWidth / 2f).roundToInt(), 0) }
-                        .onSizeChanged { labelWidths[index] = it.width },
-                )
-            }
-        }
     }
 }
 

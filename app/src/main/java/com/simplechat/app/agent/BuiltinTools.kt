@@ -92,8 +92,24 @@ object BuiltinTools {
 
         override suspend fun execute(args: JsonObject, ctx: ToolContext): ToolOutcome {
             val path = args.str("path") ?: return ToolOutcome.fail("缺少 path")
-            val content = args.str("content") ?: ""
+            /*
+             * content 缺失 ≠ content 为空。
+             *
+             * 早先这里是 `args.str("content") ?: ""`：参数名写错（`text`、`contents`）、
+             * 传成了 null、或者参数 JSON 被截断时，工具会**把目标文件清空**并回一句
+             * 「已写入（0 字符）」—— 模型当成成功，用户的文件没了。
+             * 现在没给 content 就是失败；真要写空文件得显式传空字符串。
+             */
+            val content = when (val element = args["content"]) {
+                null, is kotlinx.serialization.json.JsonNull ->
+                    return ToolOutcome.fail("缺少 content。要写的正文放在 content 里；确实要写一个空文件就传空字符串。")
+                // 给 .json 文件传了对象 / 数组而不是字符串：意图很明确，按格式化后的 JSON 写
+                is JsonObject, is kotlinx.serialization.json.JsonArray ->
+                    PrettyJson.encodeToString(kotlinx.serialization.json.JsonElement.serializer(), element) + "\n"
+                else -> args.text("content").orEmpty()
+            }
             val file = Workspace.resolve(path)
+            if (file.isDirectory) return ToolOutcome.fail("${Workspace.relative(file)} 是一个目录，不能当文件写")
             return runCatching {
                 /*
                  * 写之前先读一眼旧内容，只为了算 diff。
@@ -108,10 +124,7 @@ object BuiltinTools {
                         null
                     }
                 }
-                withContext(Dispatchers.IO) {
-                    file.parentFile?.mkdirs()
-                    file.writeText(content)
-                }
+                withContext(Dispatchers.IO) { TextEdits.writeVerified(file, content) }
                 val lines = content.count { it == '\n' } + 1
                 val diff = if (before == null) {
                     // 新建文件：全部是新增行，界面上显示成绿油油一片是对的
@@ -120,7 +133,7 @@ object BuiltinTools {
                     Diffs.compute(before, content)
                 }
                 ToolOutcome.ok(
-                    "已写入 ${Workspace.relative(file)}（$lines 行，${content.length} 字符）",
+                    "已写入 ${Workspace.relative(file)}（$lines 行，${content.length} 字符，已回读校验）",
                     diff,
                     artifacts = listOf(file.absolutePath),
                 )
@@ -128,12 +141,15 @@ object BuiltinTools {
         }
     }
 
+    private val PrettyJson = kotlinx.serialization.json.Json { prettyPrint = true }
+
     // ── 局部替换 ──────────────────────────────────────────────
 
     private object EditFile : AgentTool {
         override val name = "edit_file"
         override val description =
-            "把文件里的一段原文替换成新文本。old 必须与文件内容逐字符一致（含缩进），否则会失败。"
+            "把文件里的一段原文替换成新文本。old 要和文件内容一致（缩进必须相同；行尾空白与换行风格的差异会被容忍），" +
+                "并且在文件里只出现一次。改完会回读校验。"
         override val parameters: JsonObject = buildJsonObject {
             put("type", "object")
             putJsonObject("properties") {
@@ -147,23 +163,76 @@ object BuiltinTools {
 
         override suspend fun execute(args: JsonObject, ctx: ToolContext): ToolOutcome {
             val path = args.str("path") ?: return ToolOutcome.fail("缺少 path")
-            val old = args.str("old") ?: return ToolOutcome.fail("缺少 old")
-            val new = args.str("new") ?: ""
+            val old = args.text("old")?.takeIf { it.isNotEmpty() } ?: return ToolOutcome.fail("缺少 old")
+            // new 缺失不等于「删掉这段」：那多半是参数被截断了。要删除请显式传空字符串
+            val new = args.text("new")
+                ?: return ToolOutcome.fail("缺少 new。要把这段原文删掉就传空字符串。")
             val file = Workspace.resolve(path)
-            if (!file.exists()) return ToolOutcome.fail("文件不存在：${Workspace.relative(file)}")
-            val text = withContext(Dispatchers.IO) { file.readText() }
-            val first = text.indexOf(old)
-            if (first < 0) return ToolOutcome.fail("没找到这段原文，请先 read_file 确认（注意缩进与空行）")
-            if (text.indexOf(old, first + 1) >= 0) {
-                return ToolOutcome.fail("这段原文出现了多次，请加长上下文使其唯一")
+            if (!file.isFile) return ToolOutcome.fail("文件不存在：${Workspace.relative(file)}")
+            return editFile(file, listOf(EditHunk(old, new, all = false)))
+        }
+    }
+
+    /** 一处替换。`edit_file` 是只有一项的 `patch_file`，两者共用 [editFile]。 */
+    private class EditHunk(val old: String, val new: String, val all: Boolean)
+
+    /**
+     * 依次应用 [hunks] 并落盘。任意一处失败就整批不写。
+     *
+     * 读用严格的 UTF-8 解码、写完回读校验，理由都在 [TextEdits] 里。
+     */
+    private suspend fun editFile(file: File, hunks: List<EditHunk>): ToolOutcome {
+        val relative = Workspace.relative(file)
+        if (file.length() > 4L * 1024 * 1024) return ToolOutcome.fail("文件过大（超过 4 MB），请用 run_shell 处理")
+        val before = try {
+            withContext(Dispatchers.IO) { TextEdits.readUtf8(file) }
+        } catch (e: java.io.IOException) {
+            return ToolOutcome.fail(
+                if (e.message == "NOT_UTF8") TextEdits.notUtf8Message(relative) else "读不了 $relative：${e.message}",
+            )
+        }
+
+        var text = before
+        var replaced = 0
+        var loose = false
+        hunks.forEachIndexed { index, hunk ->
+            val where = if (hunks.size > 1) "第 ${index + 1} 处" else "这段原文"
+            when (val outcome = TextEdits.replace(text, hunk.old, hunk.new, hunk.all)) {
+                is TextEdits.Outcome.Replaced -> {
+                    text = outcome.text
+                    replaced += outcome.count
+                    if (outcome.match != TextEdits.Match.EXACT) loose = true
+                }
+                is TextEdits.Outcome.NotFound -> return ToolOutcome.fail(
+                    buildString {
+                        append(where).append("在文件里找不到，**文件没有被修改**。")
+                        if (outcome.hint.isNotEmpty()) append(outcome.hint)
+                        append("先 read_file 看清那几行现在的样子，再照着文件里的原文重发。")
+                    },
+                )
+                is TextEdits.Outcome.Ambiguous -> return ToolOutcome.fail(
+                    "$where 在文件里出现了 ${outcome.count} 次，**文件没有被修改**。" +
+                        "把前后几行一起带上让它唯一" + if (hunks.size > 1) "，或给这一处设 all=true。" else "。",
+                )
             }
-            val updated = text.replaceFirst(old, new)
-            withContext(Dispatchers.IO) { file.writeText(updated) }
-            return ToolOutcome.ok(
-                "已修改 ${Workspace.relative(file)}",
-                Diffs.compute(text, updated),
+        }
+        if (text == before) {
+            return ToolOutcome.fail("替换前后内容完全一样（old 与 new 相同？），**文件没有被修改**。")
+        }
+        return try {
+            withContext(Dispatchers.IO) { TextEdits.writeVerified(file, text) }
+            ToolOutcome.ok(
+                buildString {
+                    append("已修改 ").append(relative)
+                    if (hunks.size > 1 || replaced > 1) append("（").append(replaced).append(" 处）")
+                    append("，已回读校验。")
+                    if (loose) append("（你给的 old 与文件在行尾空白或换行符上有出入，已按忽略这些差异匹配。）")
+                },
+                Diffs.compute(before, text),
                 artifacts = listOf(file.absolutePath),
             )
+        } catch (e: Exception) {
+            ToolOutcome.fail("写入失败：${e.message}")
         }
     }
 
@@ -202,13 +271,17 @@ object BuiltinTools {
     private object RunShell : AgentTool {
         override val name = "run_shell"
         override val description =
-            "在工作区里执行一条 shell 命令（Android 的 toybox/busybox）。用于查看环境、处理文件、跑脚本。不要用它做破坏性操作。" +
-                "这台设备没有 root，sudo 一定失败；需要系统级能力时请用户换到云端工作环境。"
+            "在工作区目录里执行一条 shell 命令。环境是 App 自带的 BusyBox：shell 是 ash（不是 bash，" +
+                "没有数组和 \${var^^} 这类 bash 专有语法），grep / sed / awk / find / tar / unzip / wget / diff " +
+                "等两百来个命令都在；装了 Python 的话 python3 / pip 也可用。命令看到的是手机的真实文件系统，" +
+                "工作区路径与文件工具里的一致。每条命令是独立进程，不保留 cd 与环境变量，要连续状态就用 && 串起来；" +
+                "脚本可以直接 ./x.sh 运行，不需要 chmod。没有 root、没有 apt，sudo 一定失败；" +
+                "需要系统级能力时请用户换到云端工作环境。不要用它做破坏性操作。"
         override val parameters: JsonObject = buildJsonObject {
             put("type", "object")
             putJsonObject("properties") {
                 putJsonObject("command") { put("type", "string") }
-                putJsonObject("timeout") { put("type", "integer"); put("description", "秒，默认 30") }
+                putJsonObject("timeout") { put("type", "integer"); put("description", "秒，默认 60，上限 600") }
             }
             putJsonArray("required") { add("command") }
         }
@@ -218,7 +291,9 @@ object BuiltinTools {
 
         override suspend fun execute(args: JsonObject, ctx: ToolContext): ToolOutcome {
             val command = args.str("command") ?: return ToolOutcome.fail("缺少 command")
-            val timeout = (args.int("timeout") ?: 30).coerceIn(1, 120).toLong()
+            // 工作区访问不到时命令只会报一句「目录不存在」，模型看不出是权限的事
+            Workspace.accessProblem()?.let { return ToolOutcome.fail(it) }
+            val timeout = (args.int("timeout") ?: 60).coerceIn(1, 600).toLong()
             val result = Shell.run(command, ctx.workspace, timeout)
             /*
              * 记进终端的 AI 标签。
@@ -244,7 +319,8 @@ object BuiltinTools {
     private object RunPython : AgentTool {
         override val name = "python"
         override val description =
-            "执行一段 Python 代码并返回 stdout。用于计算、数据清洗、文本处理。解释器来自 Ubuntu 环境；缺库就用 linux_shell 里的 pip 装。"
+            "执行一段 Python 代码并返回 stdout，工作目录是工作区根。用于计算、数据清洗、文本处理。" +
+                "缺第三方库先用 install_packages 装。"
         override val parameters: JsonObject = buildJsonObject {
             put("type", "object")
             putJsonObject("properties") {
@@ -258,6 +334,7 @@ object BuiltinTools {
 
         override suspend fun execute(args: JsonObject, ctx: ToolContext): ToolOutcome {
             val code = args.str("code") ?: return ToolOutcome.fail("缺少 code")
+            Workspace.accessProblem()?.let { return ToolOutcome.fail(it) }
             return PyRuntime.run(code, ctx.workspace)
         }
     }
@@ -356,46 +433,26 @@ object BuiltinTools {
             val path = args.str("path") ?: return ToolOutcome.fail("缺少 path")
             val raw = args["hunks"] as? kotlinx.serialization.json.JsonArray
                 ?: return ToolOutcome.fail("缺少 hunks 数组")
-            data class Hunk(val old: String, val new: String, val all: Boolean)
-            val hunks = raw.mapNotNull { element ->
-                (element as? JsonObject)?.let { obj ->
-                    val old = obj.str("old") ?: return@let null
-                    Hunk(old, obj.str("new") ?: "", obj.bool("all") == true)
-                }
+            if (raw.isEmpty()) return ToolOutcome.fail("hunks 是空的")
+            /*
+             * 残缺的一项**整批拒绝**，不是跳过。
+             *
+             * 早先缺 old 的项被悄悄丢掉、缺 new 的当成空串：模型发了三处改动，
+             * 落盘两处还回一句「已修改」，或者一段代码被无声地删掉。
+             */
+            val hunks = raw.mapIndexed { index, element ->
+                val obj = element as? JsonObject
+                    ?: return ToolOutcome.fail("hunks 第 ${index + 1} 项不是 {old, new} 对象，整批未执行")
+                val old = obj.text("old")?.takeIf { it.isNotEmpty() }
+                    ?: return ToolOutcome.fail("hunks 第 ${index + 1} 项缺少 old，整批未执行")
+                val new = obj.text("new")
+                    ?: return ToolOutcome.fail("hunks 第 ${index + 1} 项缺少 new（要删除就传空字符串），整批未执行")
+                EditHunk(old, new, obj.bool("all") == true)
             }
-            if (hunks.isEmpty()) return ToolOutcome.fail("hunks 里没有任何有效的 {old, new}")
 
             val file = Workspace.resolve(path)
-            if (!file.exists()) return ToolOutcome.fail("文件不存在：${Workspace.relative(file)}")
-            if (file.length() > 4L * 1024 * 1024) return ToolOutcome.fail("文件过大（超过 4 MB），请用 run_shell 处理")
-
-            val before = withContext(Dispatchers.IO) { file.readText() }
-            var text = before
-            hunks.forEachIndexed { index, hunk ->
-                val position = text.indexOf(hunk.old)
-                if (position < 0) {
-                    val preview = hunk.old.lineSequence().firstOrNull()?.take(60).orEmpty()
-                    return ToolOutcome.fail(
-                        "第 ${index + 1} 处找不到原文（前 $index 处已校验但未落盘）：$preview",
-                    )
-                }
-                if (hunk.all) {
-                    text = text.replace(hunk.old, hunk.new)
-                } else {
-                    if (text.indexOf(hunk.old, position + 1) >= 0) {
-                        return ToolOutcome.fail(
-                            "第 ${index + 1} 处的原文出现了多次，请加长上下文使其唯一，或设 all=true",
-                        )
-                    }
-                    text = text.substring(0, position) + hunk.new + text.substring(position + hunk.old.length)
-                }
-            }
-            withContext(Dispatchers.IO) { file.writeText(text) }
-            return ToolOutcome.ok(
-                "已修改 ${Workspace.relative(file)}（${hunks.size} 处）",
-                Diffs.compute(before, text),
-                artifacts = listOf(file.absolutePath),
-            )
+            if (!file.isFile) return ToolOutcome.fail("文件不存在：${Workspace.relative(file)}")
+            return editFile(file, hunks)
         }
     }
 

@@ -250,30 +250,51 @@ class AgentRunner(
                 }
 
                 /*
-                 * 思考阶段里发出来的工具调用**一律作废**。
+                 * 思考还没结束就发出来的工具调用：**作废一次，并且明说**。
                  *
-                 * 这是模型自己的毛病，不是用户的：它在 `reasoning_content` 还没写完时
-                 * 就把 tool_calls 吐了出来 —— 那一批参数是半成品（路径没定、命令没拼完），
-                 * 照着跑只会把工作区改坏。判据是**顺序**：只要在收到工具调用增量之后
-                 * 还有思考增量，说明这段调用夹在思考中间，整批丢掉，让它想完再说。
+                 * 有的模型会在 `reasoning_content` 还没写完时就把 tool_calls 吐出来，那一批
+                 * 往往是它还没想定的动作。判据是**顺序**：收到工具调用增量之后又来了
+                 * 思考增量，说明这段调用夹在思考中间。
                  *
-                 * 正常模型是"想完 → 说话 → 调工具"，思考增量不会出现在调用之后，
-                 * 所以这条规则对它们完全无感。
+                 * 这条规则早先的写法有两个洞，合起来就是「AI 说改了、文件没变」：
+                 *
+                 * 1. 作废之后**什么都不告诉模型**。只要它这一轮顺带说了半句话，本轮就按
+                 *    「最终回答」收尾 —— 界面上是一句「我来修改…」加一张失败卡片，没有下文。
+                 * 2. **每一轮都作废**。本来就是「边想边调」的模型（交错思考是它的正常
+                 *    工作方式）在这里永远过不去。
+                 *
+                 * 现在：只作废**第一次**，把助手这轮说的话和一句「刚才那批没执行、要做请
+                 * 重发」写进上下文，然后继续下一轮。同一次运行里再遇到，就照常执行 ——
+                 * 参数是流结束后才拼好的，完整性由 parseArgs 把关，不靠顺序猜。
                  */
-                var calls = accumulator.build()
-                if (reasoningAfterCall && calls.isNotEmpty()) {
+                val calls = accumulator.build()
+                if (reasoningAfterCall && calls.isNotEmpty() && droppedThinkingCalls == 0) {
                     droppedThinkingCalls += calls.size
+                    val names = calls.joinToString("、") { it.name }
                     trySend(
                         AgentEvent.ToolFinished(
                             callId = calls.first().id,
                             name = calls.first().name,
                             ok = false,
-                            output = "（思考阶段发出的 ${calls.size} 个调用已作废：思考还没结束就动手，参数是半成品。" +
-                                "想清楚之后重新发一次。）",
+                            output = "（思考还没结束就发出的 ${calls.size} 个调用没有执行：$names。已要求模型想清楚后重新发起。）",
                             elapsedMs = 0,
                         ),
                     )
-                    calls = emptyList()
+                    if (text.isNotEmpty()) {
+                        messages += OutMessageDto(
+                            role = "assistant",
+                            content = MessageContent.text(text.toString()),
+                        )
+                    }
+                    messages += OutMessageDto(
+                        role = "user",
+                        content = MessageContent.text(
+                            "（系统提示）你在思考还没结束时就发出了 ${calls.size} 个工具调用（$names），" +
+                                "这一批**没有被执行**，文件和环境都没有任何变化。" +
+                                "如果仍然需要，请现在重新发出这些调用；不要把它们当作已经完成，也不要向用户报告已完成。",
+                        ),
+                    )
+                    continue
                 }
                 if (calls.isEmpty()) {
                     /*
@@ -333,7 +354,23 @@ class AgentRunner(
                     val tool = tools.firstOrNull { it.name == call.name }
                         ?: return Triple(ToolOutcome.fail("没有名为 ${call.name} 的工具"), 0, started)
 
+                    /*
+                     * 参数不是完整的 JSON 就**不执行**，并把原因原样告诉模型。
+                     *
+                     * 早先解析失败会退成一个空对象，工具于是回「缺少 path」——
+                     * 模型明明给了 path，只会更糊涂。真实原因几乎总是输出被截断
+                     * （正文太长撞上了 max_tokens），该做的是把内容拆小重发。
+                     */
                     val args = parseArgs(call.argumentsJson)
+                        ?: return Triple(
+                            ToolOutcome.fail(
+                                "这次 ${call.name} 调用的参数不是完整的 JSON（共 ${call.argumentsJson.length} 个字符，" +
+                                    "多半是输出被截断了），**没有执行**。请重新发起；内容很长时拆成几次，" +
+                                    "例如先用 write_file 写骨架，再用 edit_file / patch_file 分段补全。",
+                            ),
+                            0,
+                            started,
+                        )
                     val risk = tool.riskOf(args)
 
                     /*
@@ -522,11 +559,11 @@ class AgentRunner(
         else -> false
     }
 
-    /** 参数 JSON 解析。模型偶尔吐出带尾逗号或单引号的半成品，宽松模式下仍可能失败。 */
-    private fun parseArgs(raw: String): JsonObject {
-        val element = runCatching { json.parseToJsonElement(raw) }.getOrNull()
-        return element as? JsonObject ?: JsonObject(emptyMap())
-    }
+    /**
+     * 参数 JSON 解析。解析不出一个对象就返回 null，由调用方报错 ——
+     * 不能退成空对象：那等于拿一份「什么都没传」的参数去执行。
+     */
+    private fun parseArgs(raw: String): JsonObject? = parseToolArguments(raw, json)
 
     /**
      * 审批条上那一行摘要：路径 / 命令行 / URL。
@@ -555,4 +592,16 @@ class AgentRunner(
             parameters = parameters,
         ),
     )
+}
+
+/**
+ * 把模型给的参数文本解析成对象。
+ *
+ * 宽松到「模型的常见笔误」为止：空串当空对象、容忍前后多余的空白。
+ * 截断的、不是对象的一律 null。
+ */
+internal fun parseToolArguments(raw: String, json: Json): JsonObject? {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return JsonObject(emptyMap())
+    return runCatching { json.parseToJsonElement(trimmed) }.getOrNull() as? JsonObject
 }

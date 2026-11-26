@@ -1,5 +1,6 @@
 package com.simplechat.app.ui.mcp
 
+import com.simplechat.app.ui.common.relayClick
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -91,7 +92,7 @@ import com.simplechat.app.ui.settings.SettingsHint
  * 没有 `npx` / `uvx` 的系统镜像跑不起来 Node 或 Python 服务。这里的 stdio 是
  * **交给设备上的 shell 去起进程**，所以命令可以是：
  *
- * - 内置 Ubuntu 里的 `/usr/bin/node /root/server.js`（先在终端里装好）；
+ * - 内置环境里的 `python3 /绝对路径/server.py`（先在「运行环境」里装好 Python）；
  * - Termux 里的 `com.termux/.../bash -lc 'npx …'`；
  * - 或者任何设备上真实存在的可执行文件。
  *
@@ -266,7 +267,7 @@ private fun McpRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .relayClick(onClick = onClick)
             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -327,7 +328,7 @@ private fun AddRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .relayClick(onClick = onClick)
             .padding(start = 16.dp, end = 16.dp, top = 13.dp, bottom = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

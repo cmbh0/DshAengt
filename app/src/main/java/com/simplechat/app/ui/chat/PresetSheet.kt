@@ -1,5 +1,6 @@
 package com.simplechat.app.ui.chat
 
+import com.simplechat.app.ui.common.bounceClick
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -346,10 +347,8 @@ private fun PresetCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(surface)
+            .bounceClick(shape = shape, background = surface, onClick = onToggle)
             .border(1.dp, stroke, shape)
-            .clickable(onClick = onToggle)
             .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -1,5 +1,6 @@
 package com.simplechat.app.ui.history
 
+import com.simplechat.app.ui.common.pressBounce
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -541,6 +542,9 @@ internal fun ConversationRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // 点一条会话：这一行按下去再弹回来。多选态不弹 ——
+                // 那时相邻的选中行是拼成一整块的，单独缩一行会把色带撕开
+                .then(if (selectionMode) Modifier else Modifier.pressBounce(interaction))
                 .clip(rowShape)
                 .background(
                     when {

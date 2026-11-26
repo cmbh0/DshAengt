@@ -1,10 +1,10 @@
 # DSHA
 
-> 轻量、原生性能的 Android AI 对话客户端。Jetpack Compose 实现，release 经 R8 压缩后约 3.8 MB。
+> 轻量、原生性能的 Android AI 对话客户端。Jetpack Compose 实现，release 经 R8 压缩后约 7.3 MB（含 arm64 / x86_64 两套本机运行时）。
 
 **中文 | [English](README.en.md)**
 
-[![Version](https://img.shields.io/badge/version-2.4.1-blue)](https://github.com/cmbh0/DshAengt/releases)
+[![Version](https://img.shields.io/badge/version-2.5.0-blue)](https://github.com/cmbh0/DshAengt/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ## 简介
@@ -46,9 +46,9 @@
   卡片，而是时间线上的一段灰字 —— 左侧一颗会呼吸的圆点，一条竖线把多轮串起来；第二次
   的思考就落在第一次工具卡的正下方，没有「第 N 次思考」这种编号。整个过程只有一个标题
   「已深度思考（用时 N 秒）」，进行中标题走灰字流光。工具名与思考正文都不再挂顶边蓝条。
-- **内置 Linux（Ubuntu 22.04）**：随包**两套** proot（Android 原生 bionic 构建 + 上游静态构建），
-  各配同版本的 loader，先试日常档、再裸跑取日志、最后沿 p8→p0 逐档下降 —— 取这台设备真能
-  用的那一套。一套连 `-v 2` 都一个字不吐就换另一套，不在死路上耗完安装时间。
+- **内置本机运行环境（musl + BusyBox）**：随包静态 musl 1.2.5 动态加载器 + BusyBox 1.37.0
+  （ash 与两百来个命令），直接在 Android 上原生执行，没有模拟层。Python 按需下载
+  musl 版 CPython 3.12，经随包 musl 启动；不再有 proot 与 Ubuntu rootfs。
 - **上下文系统（照搬 Operit）**：摘要是一份**自包含、整段取代**的历史参考 —— 生成时
   把上一份摘要一起喂进去，输出固定四节（核心任务状态 / 互动情节与设定 / 对话历程与概要 /
   关键信息与上下文），末尾再附一份逐条压缩的「对话回顾」保住原话语感。触发只看两个数：
@@ -164,19 +164,12 @@
   那多选就没有意义。多选态下长按条目只会切换它的勾选，不再弹那个只认单条的动作面板。
   多选态底栏换成全选 / 反选 / 复制 / 移动 / 删除，常态底栏的「新建」不再只能建文件夹，
   也能直接建文件。
-- **本机 Ubuntu**：一条 30 MB 的 ubuntu-base 从国内镜像拉下来解到私有目录，用随包的 proot
-  跑起来 —— 手机上于是有了一个真 bash：`apt install gcc` 能装、`pip` 能装、`/bin/bash`
-  就是 GNU bash。AI 通过 `linux_shell` / `install_packages` 直接用它，工作区在容器内映射为
-  `/workspace`，写 `src/main.py` 与 `/workspace/src/main.py` 指向同一份文件。
-  apt 与 pip 都预置了清华源；`--link2symlink`（代理目录放在 rootfs 内部）+ 独立 `/tmp` 绑定
-  解决 proot 下 dpkg / npm 的硬链接与临时文件问题（这正是"装什么都失败"的常见根因）。
-  解压时把 rootfs 里的**绝对符号链接改写成相对路径**，并校验 `/bin/sh`、`/usr/bin/env`
-  这条启动链真的存在 —— 否则会"解压显示成功、一跑就 execve ENOENT"。
-  装完**逐档自检**：每套 proot 都先试日常档，挂了再用带 `-v 2` 的裸跑把 proot 自己的日志
-  逼出来；裸跑无声就判定这套 proot 在本机起不来、立刻换另一套，有日志才沿 p8→p0 继续降。
-  真正跑通的「哪套 proot + 哪一档参数」记进 `launch.plan`（形如 `bionic:p8`），之后所有命令
-  都走它；全都不行才报错，并把每一档的原始 stderr 一并带出来。旧版本装过的环境在升级后
-  会自动补这一步自检。
+- **本机运行环境**：AI 通过 `run_shell` / `python` / `install_packages` 直接用随包的
+  BusyBox 与按需下载的 CPython，命令的工作目录就是工作区根。shell 是 ash 加两百来个
+  命令（`sh`、`awk`、`sed`、`grep`、`tar`、`wget`…）；Python 起来后 pip 可装纯 Python 包，
+  musllinux wheel（numpy、pandas 等）也验证可装。**apt 与 npm 不再提供**；旧版装过的
+  Ubuntu 环境在「运行环境」页可一键清理。整条启动链都是原生执行，没有 proot 的
+  档位探测与自检。
 - **操作屏幕**：两条通道（无障碍 / Root）× 两条识别管线（布局节点树 / 截图 + 坐标）。
   通道由你在设置里指定，**选定之后不会被偷偷换掉** —— 选了 Root 就只走 Root，
   没授权就回一句能照着做的提示，而不是"这次碰巧走了无障碍所以看着能用"。
@@ -257,11 +250,12 @@ keyPassword=...
 ```
 
 文件缺失时 `assembleRelease` **回退 debug 签名**（不是未签名包）—— 保证 clone 下来的人也能把发版流程跑通。
+CI 发行构建设 `DSHA_REQUIRE_RELEASE_SIGNING=1`：此时缺签名配置会直接失败，绝不回落到 debug 签名。
 
 ## 开发
 
 ```bash
-./gradlew testDebugUnitTest    # 单元测试（695 项）
+./gradlew testDebugUnitTest    # 单元测试（734 项）
 ./gradlew assembleDebug        # debug 包，包名后缀 .debug
 ./gradlew assembleRelease      # release 包，需签名配置
 ```
@@ -321,14 +315,13 @@ app/src/main/java/com/simplechat/app/
 
 ## 参考项目
 
-- [ZakoCoder](https://github.com/AYssu/ZakoCoder)：本机 Ubuntu（proot）运行环境的实现参考 ——
-  `--link2symlink` 与 `PROOT_L2S_DIR`、把宿主 `/tmp` 绑进容器、独立 loader 的路径处理、
-  安装后的自检流程，这几处都是照着它的做法落地的。
+- [ZakoCoder](https://github.com/AYssu/ZakoCoder)：2.4.x 时代 proot 运行环境的实现参考
+  （`--link2symlink`、`/tmp` 绑定、安装自检的做法）。2.5.0 起运行环境已换成 musl + BusyBox
+  原生方案，proot 相关代码与产物全部移除。
 - [Operit](https://github.com/AAswordman/Operit) / [OperitTerminalCore](https://github.com/AAswordman/OperitTerminalCore)：
   MCP 工具接入与 AI 绘图流程的参考（工具发现、工具卡呈现、把绘图交给模型而不是在客户端改写回复）；
-  终端侧参考它**用 Android 原生（bionic PIE）构建的 proot + 同版本 loader、从 nativeLibraryDir
-  取二进制**的做法 —— 随包的第一套 proot 就是这条路的产物，静态构建留作后备。
-- [proot](https://github.com/proot-me/proot)：容器本体。随包分发两套构建，均为 GPL-2.0。
+  「把可执行文件借 `lib*.so` 名字放进 `nativeLibraryDir`、从那里执行」的做法源自它的终端侧实现 ——
+  2.5.0 的 musl / BusyBox / CPython 入口仍然走这条路。
 
 ## 贡献
 

@@ -1,9 +1,9 @@
 package com.simplechat.app.ui.runtime
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,85 +28,82 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simplechat.app.R
-import com.simplechat.app.agent.PythonInstaller
-import com.simplechat.app.agent.UbuntuEnv
+import com.simplechat.app.agent.MuslEnv
+import com.simplechat.app.agent.MuslPython
+import com.simplechat.app.agent.Shell
 import com.simplechat.app.data.Res
 import com.simplechat.app.ui.common.AppConfirmDialog
 import com.simplechat.app.ui.common.AppIcons
 import com.simplechat.app.ui.common.CapsuleButton
 import com.simplechat.app.ui.common.SnakeProgressRing
+import com.simplechat.app.ui.settings.SettingsDimens
+import com.simplechat.app.ui.settings.SettingsTextAction
 import com.simplechat.app.ui.settings.SettingsTopBar
 import com.simplechat.app.ui.theme.LocalChatColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.simplechat.app.ui.settings.SettingsTextAction
-import com.simplechat.app.ui.settings.SettingsDimens
 
 /**
  * 运行环境。
  *
- * 只有**一块**：Ubuntu 环境 —— 本机的一台"真 Linux"。装了之后 AI 能
- * `apt install`、能编译、能跑任意脚本，Python 也在里面（`python3` 自带）。
- * 代价是一次 30 MB 的下载与约 300 MB 磁盘。
+ * 两块，外加一块只在升级上来的设备上出现的：
  *
- * Python 不再单列安装项，也不再有一键装常用包：那两条路要么是"只剩装 Python"
- * 的半截环境，要么绕过 apt 往工作区里塞 wheel，出问题时比 Ubuntu 本身还难查。
- * 要什么库，让 AI 在 Ubuntu 里 `apt install` / `pip install` 就行。
+ * 1. **内置工具箱** —— 随 APK 分发的 BusyBox。它不需要安装，所以这张卡没有
+ *    「安装」按钮，只回答两件事：现在能不能用、不能用是因为什么。「自检」会真的
+ *    跑几条命令并把输出原样显示出来，用户截个图就是一份完整的反馈。
+ * 2. **Python** —— 按需下载的 CPython。装、重装、卸载都在这里。
+ * 3. **旧版 Ubuntu 环境** —— 2.4.x 及更早装过 proot + Ubuntu 的设备上，那几百 MB
+ *    还躺在私有目录里。新版不再用它，但也不替用户做主删掉，给一个清理入口。
  *
- * 界面上只回答两个问题：**有没有**、**要不要现在装**。
+ * 为什么不再有「装一个发行版」的选项：上一代靠 proot 翻译系统调用，在不少设备上
+ * `cd` 失效、apt 读不了 dpkg 数据库，修一处漏一处。现在命令直接跑在手机内核上，
+ * 这一整类问题不存在了；代价是没有 apt，要系统级软件包的任务交给云端工作环境。
  */
 @Composable
 fun RuntimeScreen(onBack: () -> Unit) {
     val colors = LocalChatColors.current
     val scope = rememberCoroutineScope()
 
-    // ── Ubuntu ───────────────────────────────────────────────
-    var ubuntuReady by remember { mutableStateOf(UbuntuEnv.isReady()) }
-    /*
-     * "文件在" 与 "能跑" 是两件事，界面上要分开：
-     * - 安装按钮看 [ubuntuReady]（装好且测出过启动档位）；
-     * - 卸载按钮看这个（只要目录还在就给用户一条退路）。
-     * 之前两者共用一个布尔，导致"解压成功但启动失败"的环境**卸载不掉** ——
-     * 不能跑，又不能删，只能去应用信息里清数据。
-     */
-    var ubuntuInstalled by remember { mutableStateOf(UbuntuEnv.isInstalled()) }
-    var ubuntuLabel by remember { mutableStateOf(UbuntuEnv.versionLabel().orEmpty()) }
-    var ubuntuBusy by remember { mutableStateOf(false) }
-    var ubuntuProgress by remember { mutableStateOf(0f) }
-    var ubuntuStage by remember { mutableStateOf("") }
-    var ubuntuError by remember { mutableStateOf<String?>(null) }
-    var confirmRemove by remember { mutableStateOf(false) }
-    val unsupported = remember { UbuntuEnv.unsupportedReason() }
+    // ── 工具箱 ───────────────────────────────────────────────
+    val unsupported = remember { MuslEnv.unsupportedReason() }
+    var health by remember { mutableStateOf<MuslEnv.Health?>(null) }
+    var checking by remember { mutableStateOf(false) }
+    var checkOutput by remember { mutableStateOf<String?>(null) }
 
-    /*
-     * Python 的状态**单独**一行，不跟 Ubuntu 混在一起。
-     *
-     * 之前 Python 只是"装 Ubuntu 时顺带装一下"，装没装上界面上完全看不出来：
-     * 卡片显示"Ubuntu 22.04.3 · 已就绪"，用户在终端里敲 `python3` 却得到
-     * command not found —— 两边对不上，用户只能自己猜。
-     *
-     * 现在 Python 有自己的状态、自己的版本号、自己的按钮。
-     */
-    var pythonStatus by remember { mutableStateOf<PythonInstaller.Status?>(null) }
-    var pythonVersion by remember { mutableStateOf("") }
+    // ── Python ───────────────────────────────────────────────
+    var pythonVersion by remember { mutableStateOf<String?>(null) }
     var pythonBusy by remember { mutableStateOf(false) }
+    var pythonProgress by remember { mutableStateOf(0f) }
     var pythonStage by remember { mutableStateOf("") }
     var pythonError by remember { mutableStateOf<String?>(null) }
-    var repairBusy by remember { mutableStateOf(false) }
+    var confirmRemovePython by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    // ── 旧环境 ───────────────────────────────────────────────
+    var legacyBytes by remember { mutableStateOf(0L) }
+    var legacyPath by remember { mutableStateOf("") }
+    var legacyBusy by remember { mutableStateOf(false) }
+    var legacyError by remember { mutableStateOf<String?>(null) }
+    var confirmRemoveLegacy by remember { mutableStateOf(false) }
+
+    suspend fun refresh() {
         withContext(Dispatchers.IO) {
-            ubuntuReady = UbuntuEnv.isReady()
-            ubuntuInstalled = UbuntuEnv.isInstalled()
-            ubuntuLabel = UbuntuEnv.versionLabel().orEmpty()
-            pythonStatus = PythonInstaller.diagnose()
-            pythonVersion = PythonInstaller.version()
+            health = MuslEnv.health()
+            pythonVersion = MuslPython.installedVersion()
+            val legacy = MuslEnv.legacyUbuntuDir()
+            legacyPath = legacy?.absolutePath.orEmpty()
+            // 先让卡片出来，再去数大小：几万个文件要数好几秒
+            legacyBytes = if (legacy != null) 1L else 0L
+            if (legacy != null) legacyBytes = MuslEnv.legacyUbuntuBytes().coerceAtLeast(1L)
         }
     }
+
+    LaunchedEffect(Unit) { refresh() }
 
     Column(
         modifier = Modifier
@@ -126,243 +124,172 @@ fun RuntimeScreen(onBack: () -> Unit) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // ── Ubuntu ───────────────────────────────────────
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(SettingsDimens.CardCorner))
-                    .background(colors.card)
-                    .padding(14.dp),
+            // ── 工具箱 ───────────────────────────────────────
+            val toolboxOk = health?.ok == true
+            RuntimeCard(
+                title = Res.get(R.string.runtime_toolbox),
+                status = when {
+                    checking -> Res.get(R.string.runtime_toolbox_checking)
+                    health == null -> ""
+                    toolboxOk -> MuslEnv.versionLabel()
+                    else -> Res.get(R.string.runtime_toolbox_unavailable)
+                },
+                statusColor = when {
+                    health != null && !toolboxOk -> colors.danger
+                    toolboxOk -> colors.processText
+                    else -> colors.placeholder
+                },
+                description = Res.get(R.string.runtime_toolbox_desc),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = Res.get(R.string.runtime_ubuntu),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f),
+                val problem = unsupported ?: health?.takeIf { !it.ok }?.detail
+                if (problem != null) {
+                    Spacer(Modifier.size(8.dp))
+                    ErrorText(
+                        if (unsupported != null) problem
+                        else Res.get(R.string.runtime_toolbox_fallback) + "\n" + problem,
                     )
-                    if (ubuntuBusy) {
-                        SnakeProgressRing(
-                            progress = ubuntuProgress,
-                            size = 22.dp,
-                            strokeWidth = 2.5.dp,
-                            showPercent = false,
-                        )
-                    } else {
+                }
+
+                checkOutput?.let { output ->
+                    Spacer(Modifier.size(8.dp))
+                    SelectionContainer {
                         Text(
-                            text = when {
-                                unsupported != null -> Res.get(R.string.runtime_ubuntu_unsupported)
-                                ubuntuReady -> listOfNotNull(
-                                    ubuntuLabel.ifBlank { "Ubuntu" },
-                                    UbuntuEnv.launchLabel(),
-                                ).joinToString(" · ")
-                                else -> Res.get(R.string.runtime_ubuntu_absent)
-                            },
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                            color = when {
-                                unsupported != null -> colors.danger
-                                ubuntuReady -> colors.processText
-                                else -> colors.placeholder
-                            },
+                            text = output,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 10.5.sp,
+                                lineHeight = 15.sp,
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                            color = colors.processText,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.fieldBackground)
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
                         )
                     }
                 }
 
-                Spacer(Modifier.size(6.dp))
-                Text(
-                    text = unsupported
-                        ?: Res.get(R.string.runtime_ubuntu_desc),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 16.sp),
-                    color = colors.placeholder,
+                Spacer(Modifier.size(12.dp))
+                CapsuleButton(
+                    text = Res.get(
+                        if (checking) R.string.runtime_toolbox_checking else R.string.runtime_toolbox_check,
+                    ),
+                    enabled = !checking && unsupported == null,
+                    onClick = {
+                        checking = true
+                        checkOutput = null
+                        scope.launch {
+                            val output = withContext(Dispatchers.IO) {
+                                health = MuslEnv.health(refresh = true)
+                                selfTest()
+                            }
+                            checkOutput = output
+                            checking = false
+                        }
+                    },
+                    leadingIcon = AppIcons.Terminal,
                 )
+            }
 
-                if (ubuntuBusy) {
+            // ── Python ───────────────────────────────────────
+            val pythonInstalled = pythonVersion != null
+            RuntimeCard(
+                title = Res.get(R.string.runtime_python),
+                status = when {
+                    pythonBusy -> null
+                    pythonInstalled -> "Python $pythonVersion"
+                    else -> Res.get(R.string.runtime_python_absent)
+                },
+                statusColor = if (pythonInstalled) colors.processText else colors.placeholder,
+                progress = pythonProgress.takeIf { pythonBusy },
+                description = Res.get(R.string.runtime_python_desc, MuslPython.Version),
+            ) {
+                if (!toolboxOk && health != null && !pythonInstalled) {
+                    Spacer(Modifier.size(8.dp))
+                    ErrorText(Res.get(R.string.runtime_python_needs_toolbox))
+                }
+                if (pythonBusy) {
                     Spacer(Modifier.size(10.dp))
                     Text(
-                        text = UbuntuUi.stageText(ubuntuStage, ubuntuProgress),
+                        text = if (pythonStage.isBlank()) {
+                            Res.get(R.string.runtime_preparing)
+                        } else {
+                            "$pythonStage  ${(pythonProgress * 100).toInt()}%"
+                        },
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                         color = colors.processText,
                     )
                 }
-
-                ubuntuError?.let { message ->
+                pythonError?.let { message ->
                     Spacer(Modifier.size(8.dp))
-                    /*
-                     * 用 SelectionContainer 包住：这段是**给人看的诊断**，
-                     * 用户要能把原文复制出来发过来。截图里的文字既不能选也不能复制，
-                     * 我们只能靠肉眼辨认，信息量差一大截。
-                     */
-                    androidx.compose.foundation.text.selection.SelectionContainer {
-                        Text(
-                            text = message,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 11.sp,
-                                lineHeight = 16.sp,
-                            ),
-                            color = colors.danger,
-                        )
-                    }
+                    ErrorText(message)
                 }
 
                 Spacer(Modifier.size(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CapsuleButton(
                         text = when {
-                            ubuntuBusy -> Res.get(R.string.runtime_ubuntu_installing)
-                            ubuntuReady -> Res.get(R.string.runtime_ubuntu_reinstall)
-                            else -> Res.get(R.string.runtime_ubuntu_install)
+                            pythonBusy -> Res.get(R.string.runtime_python_installing)
+                            pythonInstalled -> Res.get(R.string.runtime_python_reinstall)
+                            else -> Res.get(R.string.runtime_python_install)
                         },
-                        enabled = !ubuntuBusy && unsupported == null,
+                        enabled = !pythonBusy && toolboxOk,
                         onClick = {
-                            ubuntuError = null
-                            ubuntuBusy = true
-                            ubuntuProgress = 0f
-                            ubuntuStage = ""
+                            pythonError = null
+                            pythonBusy = true
+                            pythonProgress = 0f
+                            pythonStage = ""
                             scope.launch {
-                                val result = UbuntuEnv.install(force = true) { fraction, stage ->
-                                    ubuntuProgress = fraction
-                                    ubuntuStage = stage
+                                val result = MuslPython.install { fraction, stage ->
+                                    pythonProgress = fraction
+                                    pythonStage = stage
                                 }
-                                ubuntuBusy = false
-                                result.onFailure { ubuntuError = it.message ?: Res.get(R.string.error_install_failed_short) }
-                                ubuntuReady = UbuntuEnv.isReady()
-                                ubuntuInstalled = UbuntuEnv.isInstalled()
-                                ubuntuLabel = UbuntuEnv.versionLabel().orEmpty()
+                                pythonBusy = false
+                                result.onFailure {
+                                    pythonError = it.message ?: Res.get(R.string.error_install_failed_short)
+                                }
+                                refresh()
                             }
                         },
                         leadingIcon = AppIcons.Download,
                     )
-                    if (ubuntuInstalled && !ubuntuBusy) {
+                    if (pythonInstalled && !pythonBusy) {
                         Spacer(Modifier.size(10.dp))
                         SettingsTextAction(
-                            text = Res.get(R.string.runtime_ubuntu_remove),
-                            onClick = { confirmRemove = true },
+                            text = Res.get(R.string.runtime_python_remove),
+                            onClick = { confirmRemovePython = true },
                             destructive = true,
                         )
                     }
                 }
             }
 
-            Spacer(Modifier.size(10.dp))
-
-            // ── Python ───────────────────────────────────────
-            if (ubuntuInstalled) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(SettingsDimens.CardCorner))
-                        .background(colors.card)
-                        .padding(14.dp),
+            // ── 旧版 Ubuntu 环境 ─────────────────────────────
+            if (legacyBytes > 0L) {
+                RuntimeCard(
+                    title = Res.get(R.string.runtime_legacy),
+                    status = if (legacyBytes > 1L) formatSize(legacyBytes) else "",
+                    statusColor = colors.placeholder,
+                    description = Res.get(
+                        R.string.runtime_legacy_desc,
+                        if (legacyBytes > 1L) formatSize(legacyBytes) else "…",
+                        legacyPath,
+                    ),
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = Res.get(R.string.runtime_python),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (pythonBusy) {
-                            SnakeProgressRing(
-                                progress = 0f,
-                                size = 22.dp,
-                                strokeWidth = 2.5.dp,
-                                showPercent = false,
-                            )
-                        } else {
-                            Text(
-                                text = when {
-                                    pythonVersion.isNotBlank() -> pythonVersion
-                                    pythonStatus?.ready == true -> Res.get(R.string.runtime_python_ready)
-                                    else -> Res.get(R.string.runtime_python_absent)
-                                },
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                color = if (pythonStatus?.ready == true) {
-                                    colors.processText
-                                } else {
-                                    colors.placeholder
-                                },
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.size(6.dp))
-                    Text(
-                        text = pythonStatus?.summary ?: Res.get(R.string.runtime_python_desc),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 16.sp),
-                        color = colors.placeholder,
-                    )
-
-                    pythonError?.let { message ->
+                    legacyError?.let { message ->
                         Spacer(Modifier.size(8.dp))
-                        /*
-                         * 用 SelectionContainer 包住：这段是**给人看的诊断**，
-                         * 用户要能把原文复制出来发过来。
-                         */
-                        androidx.compose.foundation.text.selection.SelectionContainer {
-                            Text(
-                                text = message,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 11.sp,
-                                    lineHeight = 16.sp,
-                                ),
-                                color = colors.danger,
-                            )
-                        }
+                        ErrorText(message)
                     }
-
                     Spacer(Modifier.size(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CapsuleButton(
-                            text = when {
-                                pythonBusy -> Res.get(R.string.runtime_python_installing)
-                                pythonStatus?.ready == true -> Res.get(R.string.runtime_python_reinstall)
-                                else -> Res.get(R.string.runtime_python_install)
-                            },
-                            enabled = !pythonBusy && !repairBusy,
-                            onClick = {
-                                pythonError = null
-                                pythonBusy = true
-                                scope.launch {
-                                    val result = PythonInstaller.install { line ->
-                                        pythonStage = line
-                                    }
-                                    pythonBusy = false
-                                    result.onFailure { pythonError = it.message ?: Res.get(R.string.error_install_failed_short) }
-                                    pythonStatus = PythonInstaller.diagnose()
-                                    pythonVersion = PythonInstaller.version()
-                                }
-                            },
-                            leadingIcon = AppIcons.Download,
-                        )
-                        if (ubuntuInstalled && !pythonBusy && !repairBusy) {
-                            Spacer(Modifier.size(10.dp))
-                            SettingsTextAction(
-                                text = Res.get(R.string.runtime_repair),
-                                onClick = {
-                                    pythonError = null
-                                    repairBusy = true
-                                    scope.launch {
-                                        val result = UbuntuEnv.repairEnvironment { line ->
-                                            pythonStage = line
-                                        }
-                                        repairBusy = false
-                                        result.onFailure { pythonError = it.message ?: Res.get(R.string.error_repair_failed_short) }
-                                        ubuntuReady = UbuntuEnv.isReady()
-                                        pythonStatus = PythonInstaller.diagnose()
-                                        pythonVersion = PythonInstaller.version()
-                                    }
-                                },
-                            )
-                        }
-                    }
-                    if (pythonBusy || repairBusy) {
-                        Spacer(Modifier.size(8.dp))
-                        Text(
-                            text = pythonStage.ifBlank { Res.get(R.string.runtime_working) },
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                            color = colors.processText,
-                        )
-                    }
+                    CapsuleButton(
+                        text = Res.get(
+                            if (legacyBusy) R.string.runtime_legacy_removing else R.string.runtime_legacy_remove,
+                        ),
+                        enabled = !legacyBusy,
+                        onClick = { confirmRemoveLegacy = true },
+                        leadingIcon = AppIcons.Trash,
+                    )
                 }
             }
 
@@ -370,31 +297,149 @@ fun RuntimeScreen(onBack: () -> Unit) {
         }
     }
 
-    if (confirmRemove) {
+    if (confirmRemovePython) {
         AppConfirmDialog(
-            title = Res.get(R.string.runtime_ubuntu_remove),
-            message = Res.get(R.string.runtime_ubuntu_remove_hint),
-            confirmText = Res.get(R.string.runtime_ubuntu_remove),
+            title = Res.get(R.string.runtime_python_remove),
+            message = Res.get(R.string.runtime_python_remove_hint),
+            confirmText = Res.get(R.string.runtime_python_remove),
             destructive = true,
-            onDismiss = { confirmRemove = false },
+            onDismiss = { confirmRemovePython = false },
             onConfirm = {
-                confirmRemove = false
+                confirmRemovePython = false
                 scope.launch {
-                    UbuntuEnv.uninstall()
-                    ubuntuReady = UbuntuEnv.isReady()
-                    ubuntuInstalled = UbuntuEnv.isInstalled()
-                    ubuntuLabel = ""
-                    pythonStatus = null
-                    pythonVersion = ""
+                    withContext(Dispatchers.IO) { MuslPython.uninstall() }
                     pythonError = null
+                    refresh()
+                }
+            },
+        )
+    }
+
+    if (confirmRemoveLegacy) {
+        AppConfirmDialog(
+            title = Res.get(R.string.runtime_legacy_remove),
+            message = Res.get(R.string.runtime_legacy_remove_hint),
+            confirmText = Res.get(R.string.runtime_legacy_remove),
+            destructive = true,
+            onDismiss = { confirmRemoveLegacy = false },
+            onConfirm = {
+                confirmRemoveLegacy = false
+                legacyBusy = true
+                legacyError = null
+                scope.launch {
+                    val removed = withContext(Dispatchers.IO) { MuslEnv.removeLegacyUbuntu() }
+                    legacyBusy = false
+                    if (!removed) legacyError = Res.get(R.string.runtime_legacy_remove_failed)
+                    refresh()
                 }
             },
         )
     }
 }
 
-/** 把"现在在干什么"翻成一行给用户看的话。 */
-private object UbuntuUi {
-    fun stageText(stage: String, progress: Float): String =
-        if (stage.isBlank()) Res.get(R.string.runtime_preparing) else "$stage  ${(progress * 100).toInt()}%"
+/**
+ * 一张环境卡片：标题 + 右侧状态（或进度环）+ 说明，下面是各自的按钮。
+ *
+ * @param status 右上角那行小字；传 null 且 [progress] 非空时改画进度环。
+ */
+@Composable
+private fun RuntimeCard(
+    title: String,
+    status: String?,
+    statusColor: Color,
+    description: String,
+    progress: Float? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = LocalChatColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(SettingsDimens.CardCorner))
+            .background(colors.card)
+            .padding(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            if (progress != null) {
+                SnakeProgressRing(
+                    progress = progress,
+                    size = 22.dp,
+                    strokeWidth = 2.5.dp,
+                    showPercent = false,
+                )
+            } else if (!status.isNullOrBlank()) {
+                Text(
+                    text = status,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = statusColor,
+                )
+            }
+        }
+        Spacer(Modifier.size(6.dp))
+        Text(
+            text = description,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 16.sp),
+            color = colors.placeholder,
+        )
+        content()
+    }
+}
+
+/** 错误原文。可选中：用户要能把它复制出来发给开发者。 */
+@Composable
+private fun ErrorText(message: String) {
+    SelectionContainer {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 16.sp),
+            color = LocalChatColors.current.danger,
+        )
+    }
+}
+
+/**
+ * 自检：跑几条有代表性的命令，把输出原样拿回来。
+ *
+ * 覆盖的是最容易在真机上出岔子的几处 —— applet 再执行（`ls`）、管道与外部
+ * 命令（`gzip`）、DNS、以及 Python 的加载链。每条单独跑、单独报退出码：
+ * 一条被系统杀掉不该让后面的结果都看不到。
+ */
+private suspend fun selfTest(): String {
+    val health = MuslEnv.health()
+    if (!health.ok) return health.detail
+    val steps = buildList {
+        add("uname -m && busybox | head -n 1")
+        add("ls / | wc -l")
+        add("echo dsha | gzip | gunzip")
+        add("nslookup -type=a example.com 2>&1 | tail -n 3")
+        if (MuslPython.isInstalled()) {
+            add("python3 -c 'import sys, ssl, sqlite3; print(sys.version.split()[0], ssl.OPENSSL_VERSION)'")
+        }
+    }
+    return buildString {
+        for (step in steps) {
+            val result = Shell.run(step, cwd = MuslEnv.homeDir(), timeoutSeconds = 30)
+            append("$ ").append(step).append('\n')
+            val output = (result.stdout.trimEnd() + "\n" + result.stderr.trimEnd()).trim()
+            if (output.isNotEmpty()) append(output).append('\n')
+            if (result.exitCode != 0 || result.timedOut) {
+                append("[exit ").append(result.exitCode)
+                if (result.timedOut) append(" timeout")
+                Shell.signalHint(result.exitCode)?.let { append(" ").append(it) }
+                append("]\n")
+            }
+        }
+    }.trimEnd()
+}
+
+private fun formatSize(bytes: Long): String = when {
+    bytes >= 1024L * 1024 * 1024 -> "%.1f GB".format(bytes / (1024.0 * 1024 * 1024))
+    bytes >= 1024L * 1024 -> "%d MB".format(bytes / (1024 * 1024))
+    else -> "%d KB".format((bytes / 1024).coerceAtLeast(1))
 }

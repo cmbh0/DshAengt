@@ -1,7 +1,6 @@
 package com.simplechat.app.terminal
 
 import com.simplechat.app.agent.Shell
-import com.simplechat.app.agent.UbuntuEnv
 import com.simplechat.app.agent.Workspace
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,6 +44,14 @@ class TerminalSession(
          * 长时间挂着会一直涨。4000 行约等于几十屏，往回翻也翻不到那么远。
          */
         const val MaxLines = 4000
+
+        /**
+         * 单条命令的上限。
+         *
+         * 这个终端是按行收发的（没有 pty），命令跑完才看得到输出；`pip install`
+         * 一个大包一两分钟很正常，60 秒不够，再长则会让人以为卡死了。
+         */
+        const val CommandTimeoutSeconds = 300L
     }
 
     private val _lines = MutableStateFlow<List<TerminalLine>>(emptyList())
@@ -56,31 +63,8 @@ class TerminalSession(
     private val _cwd = MutableStateFlow(Workspace.rootOrNull() ?: File("/"))
     val cwd: StateFlow<File> = _cwd.asStateFlow()
 
-    /**
-     * 是否切到 Ubuntu。装了才有得切 —— 没装时这个开关是关的，界面也不显示。
-     *
-     * 两种 shell 的差异不是"好看不好看"，而是**有没有 apt / gcc / 真 bash**：
-     * 手机自带的 toybox 连 `--include` 都不认，而 Ubuntu 里可以 `apt install gcc`
-     * 然后编译。默认装上就用 Ubuntu —— 用户装它就是为了这个。
-     */
-    private val _ubuntu = MutableStateFlow(UbuntuEnv.isInstalled())
-    val ubuntu: StateFlow<Boolean> = _ubuntu.asStateFlow()
-
-    /** Ubuntu 里的当前目录（guest 路径，如 `/workspace/src`）。 */
-    private val _guest = MutableStateFlow("/workspace")
-    val guest: StateFlow<String> = _guest.asStateFlow()
-
-    fun ubuntuAvailable(): Boolean = UbuntuEnv.isInstalled()
-
-    /** 在 sh 与 Ubuntu 之间切换。没装 Ubuntu 时什么也不做。 */
-    fun toggleShell() {
-        if (!UbuntuEnv.isInstalled()) {
-            appendInfo("还没有安装 Ubuntu 环境。到「设置 → 运行环境」装一次就能用。")
-            return
-        }
-        _ubuntu.value = !_ubuntu.value
-        appendInfo(if (_ubuntu.value) "已切到 Ubuntu（apt / gcc / 真 bash 都可用）" else "已切回本机 sh")
-    }
+    /** 上一个目录，给 `cd -` 用。 */
+    private var previousCwd: File? = null
 
     private val history = mutableListOf<String>()
     private var historyCursor = -1
@@ -139,7 +123,6 @@ class TerminalSession(
 
     /** 提示符。相对工作区的路径更短，手机上不容易换行。 */
     fun prompt(): String {
-        if (_ubuntu.value) return "ubuntu:${_guest.value}$"
         val base = Workspace.rootOrNull()
         val current = _cwd.value
         val shown = if (base != null && current.path.startsWith(base.path)) {
@@ -155,19 +138,6 @@ class TerminalSession(
         if (history.isEmpty()) return null
         historyCursor = (historyCursor - 1).coerceAtLeast(0)
         return history[historyCursor]
-    }
-
-    /** 折叠 `/a/../b`、`./` 这类路径。guest 里没有 host 的 canonicalFile 可用。 */
-    private fun normalizeGuest(path: String): String {
-        val parts = ArrayDeque<String>()
-        path.split('/').forEach { segment ->
-            when (segment) {
-                "", "." -> Unit
-                ".." -> if (parts.isNotEmpty()) parts.removeLast()
-                else -> parts.addLast(segment)
-            }
-        }
-        return "/" + parts.joinToString("/")
     }
 
     fun historyDown(): String? {
@@ -193,26 +163,17 @@ class TerminalSession(
 
         // `cd` 只能自己处理：子进程里的 chdir 不会影响下一次启动的进程
         if (command == "cd" || command.startsWith("cd ")) {
-            if (_ubuntu.value) {
-                val target = command.removePrefix("cd").trim().ifBlank { "~" }
-                _guest.value = when {
-                    target == "~" -> "/root"
-                    target == "/workspace" -> "/workspace"
-                    target.startsWith("/") -> normalizeGuest(target)
-                    else -> normalizeGuest(_guest.value.trimEnd('/') + "/" + target)
-                }
-                return
-            }
             val target = command.removePrefix("cd").trim().ifBlank { "~" }
-            val next = when (target) {
-                "~", "/workspace" -> Workspace.rootOrNull() ?: _cwd.value
-                "-" -> _cwd.value
-                else -> {
-                    val candidate = if (target.startsWith("/")) File(target) else File(_cwd.value, target)
-                    candidate
-                }
+            val next = when {
+                // `~` 是工作区根，不是 $HOME：这个终端是「在工作区里干活」的，回家就该回到那儿
+                target == "~" -> Workspace.rootOrNull() ?: _cwd.value
+                target == "-" -> previousCwd ?: _cwd.value
+                target.startsWith("~/") -> File(Workspace.rootOrNull() ?: _cwd.value, target.removePrefix("~/"))
+                target.startsWith("/") -> File(target)
+                else -> File(_cwd.value, target)
             }
             if (next.isDirectory) {
+                previousCwd = _cwd.value
                 _cwd.value = runCatching { next.canonicalFile }.getOrDefault(next)
             } else {
                 _lines.value = _lines.value + TerminalLine("cd: 没有这个目录：$target", TerminalLine.Kind.ERROR)
@@ -222,11 +183,7 @@ class TerminalSession(
 
         _busy.value = true
         try {
-            val result = if (_ubuntu.value) {
-                UbuntuEnv.run(command, cwd = _guest.value, timeoutSeconds = 60)
-            } else {
-                Shell.run(command, _cwd.value, 60)
-            }
+            val result = Shell.run(command, _cwd.value, CommandTimeoutSeconds)
             val additions = buildList {
                 result.stdout.trimEnd().takeIf { it.isNotBlank() }?.lineSequence()?.forEach {
                     add(TerminalLine(it, TerminalLine.Kind.OUTPUT))
@@ -235,7 +192,7 @@ class TerminalSession(
                     add(TerminalLine(it, TerminalLine.Kind.ERROR))
                 }
                 if (result.timedOut) {
-                    add(TerminalLine("（超时 60 秒，已终止）", TerminalLine.Kind.ERROR))
+                    add(TerminalLine("（超时 $CommandTimeoutSeconds 秒，已终止）", TerminalLine.Kind.ERROR))
                 }
                 if (result.truncated) {
                     add(TerminalLine("（输出过长，已截断）", TerminalLine.Kind.INFO))

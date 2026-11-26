@@ -119,9 +119,17 @@ fun InputBar(
      * 输入栏不该知道这套规则。
      */
     model: ModelInfo? = null,
-    /** 模型浮层内容（模型列表 + 思考档位 + 联网）。 */
     /** 模型浮层。参数是"关掉这张浮层"——里面要弹对话框时先收起它。 */
     modelPanel: @Composable (() -> Unit) -> Unit = { _ -> },
+    /**
+     * 当前思考档位。右侧那颗「思考强度」按钮据此画档位弧。
+     *
+     * 它不在模型浮层里了：换不换模型是偶尔的事，「这一句要不要多想一会儿」
+     * 却是每发一条都可能改的，所以单独一颗，挨着 ⊕ 和发送键。
+     */
+    reasoningLevel: ReasoningLevel = ReasoningLevel.OFF,
+    /** 思考强度卡片的内容。 */
+    reasoningPanel: @Composable () -> Unit = {},
     streaming: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
@@ -576,6 +584,36 @@ fun InputBar(
             Spacer(Modifier.width(6.dp))
 
                 /*
+                 * 思考强度：右组的第一颗，点开是一张带滑块的卡片。
+                 *
+                 * 放在右边而不是左边那排胶囊里：左边三颗说的是「状态」（上下文 / 模型 /
+                 * 审批），右边是「这一条怎么发」（多想一会儿 / 带附件 / 发出去）。
+                 * 卡片右对齐这颗按钮、从它身上长出来（`bouncy`），手指不用挪就能接着拖。
+                 */
+                Box {
+                    ReasoningChip(
+                        level = reasoningLevel,
+                        expanded = bubble == Bubble.REASONING,
+                        onClick = {
+                            if (bubbleGate.acceptToggle()) bubble = bubble.toggle(Bubble.REASONING)
+                        },
+                    )
+                    AppMenu(
+                        expanded = bubble == Bubble.REASONING,
+                        onDismissRequest = {
+                            bubbleGate.markClosed()
+                            bubble = Bubble.NONE
+                        },
+                        width = ReasoningBubbleWidth,
+                        alignEnd = true,
+                        bouncy = true,
+                    ) {
+                        reasoningPanel()
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
+
+                /*
                  * 附件入口。图标是**圆圈加号**（⊕），与顶栏的「新建对话」区分开 ——
                  * 后者是气泡加号。同一个符号不要承担两种动作。
                  *
@@ -670,8 +708,8 @@ fun InputBar(
 /** 输入栏第二行的统一控件高度。 */
 private val RowButtonSize = 32.dp
 
-/** 第二行能开的三张小浮层 —— 同时只有一张。 */
-private enum class Bubble { NONE, CONTEXT, MODEL, APPROVAL }
+/** 第二行能开的四张小浮层 —— 同时只有一张。 */
+private enum class Bubble { NONE, CONTEXT, MODEL, APPROVAL, REASONING }
 
 private fun Bubble.toggle(target: Bubble): Bubble = if (this == target) Bubble.NONE else target
 

@@ -1,5 +1,7 @@
 package com.simplechat.app.ui.workspace
 
+import com.simplechat.app.ui.common.bounceClick
+import com.simplechat.app.ui.common.bounceHost
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -61,11 +63,10 @@ import androidx.compose.foundation.layout.Box
 /**
  * 工作区绑定。
  *
- * 三种来源共存，切换只影响"Agent 和终端能看到哪个目录"：
+ * 两种来源共存，切换只影响"Agent 和终端能看到哪个目录"：
  * ```
  * 内置   files/workspace        永远可用，不用任何权限
  * 本机   /storage/emulated/0/... 需要「所有文件访问」
- * 容器   .../ubuntu/rootfs/app   Ubuntu 里那个目录的宿主机路径
  * ```
  *
  * 为什么绑定的是**路径**而不是 SAF 的 tree URI：终端要 `cd`、Shell 要 `cwd`、
@@ -259,6 +260,35 @@ fun WorkspaceScreen(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
+                    /*
+                     * 绑着、但此刻用不了：把原因写在这张卡片上。
+                     *
+                     * 早先目录访问不到时绑定会被悄悄撤掉，这里显示成「未绑定」，
+                     * 用户只看到 AI 突然不会读文件了。现在绑定保留，问题在这里说清楚，
+                     * 能一键修的（权限）给出入口。`current` 作为 key：重新绑定后立刻重算。
+                     */
+                    val problem = remember(current, browsePath) { Workspace.problem() }
+                    if (problem != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = Res.get(
+                                when (problem) {
+                                    com.simplechat.app.agent.WorkspaceProblem.NO_PERMISSION ->
+                                        R.string.workspace_problem_permission
+                                    com.simplechat.app.agent.WorkspaceProblem.MISSING ->
+                                        R.string.workspace_problem_missing
+                                    com.simplechat.app.agent.WorkspaceProblem.UNREADABLE ->
+                                        R.string.workspace_problem_unreadable
+                                },
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        if (problem == com.simplechat.app.agent.WorkspaceProblem.NO_PERMISSION) {
+                            Spacer(Modifier.height(2.dp))
+                            SmallAction(Res.get(R.string.workspace_problem_fix), onOpenPermissions)
+                        }
+                    }
                 }
 
                 /*
@@ -284,9 +314,10 @@ fun WorkspaceScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(SettingsDimens.CardCorner))
-                                .background(colors.card)
-                                .clickable { bind(folder.absolutePath, WorkspaceKind.INTERNAL) }
+                                .bounceClick(
+                                    shape = RoundedCornerShape(SettingsDimens.CardCorner),
+                                    background = colors.card,
+                                ) { bind(folder.absolutePath, WorkspaceKind.INTERNAL) }
                                 .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -357,9 +388,10 @@ fun WorkspaceScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(SettingsDimens.CardCorner))
-                            .background(colors.card)
-                            .clickable { browsePath = info.path }
+                            .bounceClick(
+                                shape = RoundedCornerShape(SettingsDimens.CardCorner),
+                                background = colors.card,
+                            ) { browsePath = info.path }
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
@@ -483,6 +515,8 @@ private fun TextRow(title: String, subtitle: String?, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            // 一行就是一张卡：按下去缩的是这张卡，所以用单卡的幅度
+            .bounceHost(com.simplechat.app.ui.common.BounceScale.Card)
             .clip(RoundedCornerShape(SettingsDimens.CardCorner))
             .background(colors.card),
     ) {

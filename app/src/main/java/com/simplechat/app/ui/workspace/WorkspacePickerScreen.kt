@@ -1,5 +1,6 @@
 package com.simplechat.app.ui.workspace
 
+import com.simplechat.app.ui.common.bounceClick
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,7 +39,6 @@ import com.simplechat.app.data.Res
 import com.simplechat.app.ui.common.AppIcons
 import com.simplechat.app.ui.common.IconCircleButton
 import com.simplechat.app.ui.theme.LocalChatColors
-import androidx.compose.ui.draw.clip
 import com.simplechat.app.ui.settings.SettingsChevron
 import com.simplechat.app.ui.settings.SettingsDimens
 import com.simplechat.app.ui.settings.SettingsTopBar
@@ -218,9 +218,11 @@ private fun PickerCard(
             .heightIn(min = 76.dp)
             // 与设置里的卡片同一种容器：同一个圆角、不描边（灰底上的白卡不需要再勾一圈线），
             // 先裁再上色，水波纹不会溢出四个角
-            .clip(RoundedCornerShape(SettingsDimens.CardCorner))
-            .background(colors.card)
-            .clickable(onClick = onClick)
+            .bounceClick(
+                shape = RoundedCornerShape(SettingsDimens.CardCorner),
+                background = colors.card,
+                onClick = onClick,
+            )
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),

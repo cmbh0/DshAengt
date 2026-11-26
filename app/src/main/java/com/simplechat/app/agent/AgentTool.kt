@@ -143,6 +143,21 @@ fun JsonObject.str(key: String): String? =
         .getOrNull()
         ?.takeIf { it.isNotBlank() && it != "null" }
 
+/**
+ * 原样取文本：**不裁空白，空串也算有值**。
+ *
+ * [str] 把空白串和字面量 `null` 都当成「没传」，对路径、命令这类参数是对的，
+ * 对**文件内容**是错的：只含一个换行的 `new`、内容就是 `null` 的 JSON 文件、
+ * 故意写空的文件，都会被它吃掉。凡是要原封不动落盘的参数用这个取。
+ *
+ * 键不存在、是 JSON null、或者是对象 / 数组时返回 null。
+ */
+fun JsonObject.text(key: String): String? {
+    val element = this[key] ?: return null
+    if (element is kotlinx.serialization.json.JsonNull) return null
+    return (element as? kotlinx.serialization.json.JsonPrimitive)?.content
+}
+
 fun JsonObject.int(key: String): Int? = str(key)?.trim()?.toIntOrNull()
 
 fun JsonObject.bool(key: String): Boolean? = str(key)?.trim()?.lowercase()?.let {

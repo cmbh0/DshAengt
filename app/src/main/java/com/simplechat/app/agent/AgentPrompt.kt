@@ -17,13 +17,15 @@ object AgentPrompt {
      *   云端没有手机屏幕、没有常驻 shell，说错了模型会去点一个不存在的界面。
      */
     /**
-     * @param linux 本机装了 Ubuntu 环境（`linux_shell` 可用）。
-     * @param web   「内置浏览器」技能开着（`web_search` / `web_open` 可用）。
+     * @param linux  本机的内置环境可用（`run_shell` 跑在 BusyBox 上，`install_packages` 挂着）。
+     * @param python 内置环境里装了 Python。
+     * @param web    「内置浏览器」技能开着（`web_search` / `web_open` 可用）。
      */
     fun system(
         root: String,
         cloud: Boolean = false,
         linux: Boolean = false,
+        python: Boolean = false,
         web: Boolean = false,
         /** 云端是 SSH 直连（而不是 HTTP 工作区服务）。只影响"你怎么碰到那台机器"这一句。 */
         ssh: Boolean = false,
@@ -32,7 +34,7 @@ object AgentPrompt {
     ): String = when {
         plain -> plainPrompt()
         cloud -> cloudPrompt(root, web, ssh)
-        else -> localPrompt(root, linux, web)
+        else -> localPrompt(root, linux, python, web)
     }
 
     /**
@@ -55,11 +57,13 @@ object AgentPrompt {
         3. 不要输出工具的调用格式或伪造工具结果 —— 你手上没有那些工具。
     """.trimIndent()
 
-    private fun localPrompt(root: String, linux: Boolean, web: Boolean): String = """
+    private fun localPrompt(root: String, linux: Boolean, python: Boolean, web: Boolean): String = """
         你是一个能动手做事的助手，运行在 Android 设备的沙箱工作区里，也能操作这台手机的屏幕。
 
         工作区根目录：$root
-        所有相对路径都相对它解析，你无法访问工作区之外的文件（技能例外：用 read_skill 读）。
+        文件工具的路径写相对路径（相对这个根），或者写这个目录之下的绝对路径，两种都可以；
+        run_shell 也在这个目录里执行。你无法读写工作区之外的文件（技能例外：用 read_skill 读）。
+        改文件以工具的回执为准：回执说「没有被修改」「没有执行」就是没改成，不要向用户报告已完成。
 
         行为准则：
         1. 需要看文件、跑命令、抓网页时，直接用工具，不要先问用户"要不要我帮你查"。
@@ -73,11 +77,31 @@ object AgentPrompt {
         6. 用户消息里出现 @skill:xxx 或 @mcp:xxx，那是用户**点名**要用的能力，优先用它们。
         7. 要操作手机界面（别的 App、点按钮、填表单）时：先 screen_observe 看清当前界面，
            再用快照里的 id 操作；每次动作之后重新 observe。不要凭猜测点坐标。
-        ${if (linux) "8. 这台手机还装着一个完整的 Ubuntu 环境。装包、编译、跑 Python、用 git 走 linux_shell（真 bash + apt），\n   只是想翻手机上的文件才用 run_shell。工作区在那边映射为 /workspace。" else ""}
-        ${if (web) "9. 需要**会变的信息**（版本号、新闻、最新文档、报错的新解法）时先 web_search，读细节再 web_open；\n   回答里带上用到的链接，不要凭训练数据里的印象说「最新」。" else ""}
+        ${if (linux) runtimeRule(python) else ""}
+        ${if (web) "9. 需要**会变的信息**（版本号、新闻、最新文档、报错的新解法）时先 web_search，读细节再 web_open；\n           回答里带上用到的链接，不要凭训练数据里的印象说「最新」。" else ""}
 
         回答语言跟随用户使用的语言。代码、命令、路径保持原样。
     """.trimIndent()
+
+    /**
+     * 第 8 条：本机 shell 是什么、不是什么。
+     *
+     * 模型默认把「有 shell」理解成「有一台 Debian」：上来就 `apt install`、写 bash 数组、
+     * `pip install` 一个要编译的包。把边界一次说清，比让它撞三次墙再自己总结便宜得多。
+     * Python 装没装按**实际状态**说 —— 说「有」而没有，它会一直重试一个不存在的命令。
+     *
+     * 续行缩进 11 个空格，是为了和模板里别的续行对齐：模板最后要过一遍
+     * `trimIndent()`，插进来的行缩进更浅的话，整段提示词的公共缩进会被它带歪。
+     */
+    private fun runtimeRule(python: Boolean): String = buildString {
+        append("8. run_shell 跑在 App 自带的 BusyBox 上，直接在工作区目录里执行，路径就是文件工具用的那个路径。")
+        append("\n           shell 是 ash 不是 bash；没有 apt、没有编译器、没有 root。")
+        if (python) {
+            append("\n           Python 已安装：跑代码用 python 工具，装第三方包用 install_packages（纯 Python 包，以及有 musllinux wheel 的扩展包）。")
+        } else {
+            append("\n           Python **还没安装**：需要它时请用户到「设置 → 运行环境」点「安装 Python」，不要反复尝试 python3 命令。")
+        }
+    }
 
     private fun cloudPrompt(root: String, web: Boolean, ssh: Boolean): String = """
         你是一个能动手做事的助手。这个对话绑定了一个**云端工作环境**：一台远端 Linux 机器上的目录，

@@ -383,7 +383,20 @@ class McpClient(
         val command = config.command.ifBlank { error("STDIO 需要填写启动命令") }
         val args = config.args.trim()
         val full = if (args.isEmpty()) command else "$command $args"
-        val builder = ProcessBuilder("/system/bin/sh", "-c", full)
+        /*
+         * 首选内置环境：那里的 PATH 里有 python3 和 BusyBox 的全套命令，
+         * 「python3 /path/server.py」这种配置才起得来。工具箱不可用时退回系统 sh。
+         */
+        val musl = com.simplechat.app.agent.MuslEnv.prepare()
+        val builder = if (musl != null) {
+            ProcessBuilder(musl.busybox, "sh", "-c", full).apply {
+                val env = environment()
+                com.simplechat.app.agent.MuslEnv.DroppedVariables.forEach(env::remove)
+                env.putAll(musl.environment)
+            }
+        } else {
+            ProcessBuilder("/system/bin/sh", "-c", full)
+        }
             .directory(workDir)
             .redirectErrorStream(false)
         /*

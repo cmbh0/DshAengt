@@ -3,6 +3,7 @@ package com.simplechat.app.ui.settings
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import com.simplechat.app.ui.common.relayClick
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -280,7 +281,8 @@ fun SettingsRow(
             .heightIn(min = SettingsDimens.RowMinHeight)
             .then(
                 if (onClick != null) {
-                    Modifier.clickable(enabled = enabled, onClick = onClick)
+                    // 行在分组卡片里：点下去回弹的是整张卡（见 Bounce.kt）
+                    Modifier.relayClick(enabled = enabled, onClick = onClick)
                 } else {
                     Modifier
                 },

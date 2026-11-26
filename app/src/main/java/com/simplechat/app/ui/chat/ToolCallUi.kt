@@ -126,10 +126,11 @@ fun toolDisplayName(name: String): String = when {
     name == "python" -> Res.get(R.string.tool_python)
     name == "web_fetch" -> Res.get(R.string.tool_web_fetch)
     name == "generate_image" -> Res.get(R.string.tool_generate_image)
-    // 本机 Ubuntu 那一族：不映射的话卡片标题会直接显示 `linux_shell` 这种内部名
-    name == "linux_shell" -> "Ubuntu 终端"
+    // linux_shell / linux_env 是 2.4.x 的工具，2.5.0 起已经没有了。
+    // 旧对话里还存着它们的卡片，不映射的话标题会直接显示内部名
+    name == "linux_shell" -> "Ubuntu 终端（旧）"
     name == "install_packages" -> "安装依赖"
-    name == "linux_env" -> "Ubuntu 环境状态"
+    name == "linux_env" -> "Ubuntu 环境状态（旧）"
     name.startsWith("mcp__") -> "MCP · " + name.split("__").getOrNull(2).orEmpty()
     else -> name
 }
@@ -174,9 +175,7 @@ fun activityLabel(name: String, argsJson: String): String {
         "web_fetch" -> "正在打开网页"
         "web_search" -> "正在搜索"
         "python" -> "正在运行 Python"
-        "linux_shell" -> "正在 Ubuntu 里执行命令"
         "install_packages" -> "正在安装依赖"
-        "linux_env" -> "正在检查 Ubuntu 环境"
         "generate_image" -> "正在绘制图片"
         else -> if (name.startsWith("mcp__")) "正在调用 MCP 工具" else "正在执行 " + toolDisplayName(name)
     }

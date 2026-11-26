@@ -815,8 +815,8 @@ private class AppMenuPositionProvider(
             }
             aboveY
         }
-        // 告诉上层"最后落在落点的哪一侧"（长按跟手时缩放支点要靠它）
-        if (touchPoint != null) onSide(cardY != belowY)
+        // 告诉上层"最后落在锚点 / 落点的哪一侧"（缩放支点要靠它）
+        onSide(cardY != belowY)
         val clampedY = cardY.coerceIn(minY, maxY)
 
         return IntOffset(cardX - bleedPx, clampedY - bleedPx)
@@ -940,6 +940,14 @@ fun AppMenu(
      * 所以由调用方声明：**有输入框的那张必须传 true**。
      */
     focusable: Boolean = false,
+    /**
+     * 「展开一张卡片」式的出场：从贴着控件的那个角放大出来，带一点回弹。
+     *
+     * 默认的出场只有 70ms、几乎不缩放 —— 菜单是「点了就该在那儿」的东西，
+     * 动画越短越好。而卡片（思考强度那张）里放的是一个要上手拖的控件，
+     * 它从按钮里「长出来」，人才知道这张卡属于哪颗按钮。
+     */
+    bouncy: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = LocalChatColors.current
@@ -984,8 +992,14 @@ fun AppMenu(
              * 一帧空白。现在改为：立刻把进度推到 0.7（此时已经 85% 不透明），
              * 剩下的 70ms 用来补满。视觉上是"点下去就出现"。
              */
-            progress.snapTo(0.7f)
-            progress.animateTo(1f, tween(MenuAnimMs, easing = MotionEasing))
+            if (bouncy) {
+                // 起点同样不从 0 起（那一帧是全透明的），弹簧会略微过冲再落定
+                progress.snapTo(0.25f)
+                progress.animateTo(1f, spring(dampingRatio = 0.62f, stiffness = 520f))
+            } else {
+                progress.snapTo(0.7f)
+                progress.animateTo(1f, tween(MenuAnimMs, easing = MotionEasing))
+            }
         } else {
             // 收起比展开更快：关的时候用户已经在看别处了，多留一帧都是拖
             progress.animateTo(0f, tween(90, easing = MotionEasing))
@@ -1022,10 +1036,15 @@ fun AppMenu(
                      * "已经在那里"的样子。真正从 0 起手的那一帧是完全透明的，
                      * 即使只有 16ms，叠上窗口创建也会被感知成"点了没反应"。
                      */
-                    val s = 0.94f + 0.06f * progress.value
+                    val s = if (bouncy) {
+                        // 0.80 → 1：缩放幅度大得多，过冲那一下（约 1.01）落在阴影预留的空白里
+                        0.80f + 0.20f * progress.value
+                    } else {
+                        0.94f + 0.06f * progress.value
+                    }
                     scaleX = s
                     scaleY = s
-                    alpha = 0.85f + 0.15f * progress.value
+                    alpha = (0.85f + 0.15f * progress.value).coerceIn(0f, 1f)
                     /*
                      * 支点 = **贴着手指的那个角**。
                      *
@@ -1039,10 +1058,15 @@ fun AppMenu(
                      * 菜单宽度固定、位置被钳过，横向支点本来就没有可靠信息，
                      * 索性从中间缩放。（点击触发的菜单贴着锚点右缘，仍取右上。）
                      */
-                    transformOrigin = TransformOrigin(
-                        if (touchPoint != null) 0.5f else 1f,
-                        if (touchPoint != null && aboveAnchor[0]) 1f else 0f,
-                    )
+                    transformOrigin = if (bouncy && touchPoint == null) {
+                        // 卡片从控件里长出来：支点是贴着控件的那个角
+                        TransformOrigin(if (alignEnd) 0.9f else 0.1f, if (aboveAnchor[0]) 1f else 0f)
+                    } else {
+                        TransformOrigin(
+                            if (touchPoint != null) 0.5f else 1f,
+                            if (touchPoint != null && aboveAnchor[0]) 1f else 0f,
+                        )
+                    }
                 }
                 .shadow(
                     elevation = AppShadow.RaisedElevation,

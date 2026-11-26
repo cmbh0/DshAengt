@@ -1,0 +1,145 @@
+diff -ruN busybox-1.37.0.orig/libbb/appletlib.c busybox-1.37.0/libbb/appletlib.c
+--- busybox-1.37.0.orig/libbb/appletlib.c	2024-04-16 07:23:50.000000000 +0000
++++ busybox-1.37.0/libbb/appletlib.c	2026-11-25 16:10:41.400200811 +0000
+@@ -977,7 +977,8 @@
+ static NORETURN void run_applet_and_exit(const char *name, char **argv)
+ {
+ #  if ENABLE_BUSYBOX
+-	if (is_prefixed_with(name, "busybox"))
++	/* Android: shipped inside the APK as libbusybox.so */
++	if (is_prefixed_with(name, "busybox") || is_prefixed_with(name, "libbusybox"))
+ 		exit(busybox_main(/*unused:*/ 0, argv));
+ #  endif
+ #  if NUM_APPLETS > 0
+diff -ruN busybox-1.37.0.orig/shell/ash.c busybox-1.37.0/shell/ash.c
+--- busybox-1.37.0.orig/shell/ash.c	2024-09-26 14:00:52.000000000 +0000
++++ busybox-1.37.0/shell/ash.c	2026-11-25 16:10:41.408200811 +0000
+@@ -8263,6 +8263,117 @@
+ static int builtinloc = -1;     /* index in path of %builtin, or -1 */
+ 
+ 
++/*
++ * Android: nothing in app-private storage or on /sdcard may be exec'ed,
++ * whatever its mode bits say (W^X for apps, noexec on shared storage).
++ * A script is still readable, so when execve() says EACCES we hand the file
++ * to its interpreter ourselves: "./build.sh" and "./tool.py" keep working.
++ *
++ * Returns only if the file is not a script or the interpreter is missing.
++ */
++static void
++android_exec_script(const char *cmd, char **argv, char **envp)
++{
++	static const char shells[] ALIGN1 = "sh\0ash\0bash\0dash\0ksh\0mksh\0zsh\0";
++	char head[256];
++	char *interp, *arg, *p;
++	const char *path, *s;
++	char **nargv;
++	int fd, n, i, argc;
++
++	fd = open(cmd, O_RDONLY | O_CLOEXEC);
++	if (fd < 0)
++		return;
++	n = full_read(fd, head, sizeof(head) - 1);
++	close(fd);
++	if (n <= 0)
++		return;
++	head[n] = '\0';
++	if (memchr(head, '\0', n))
++		return; /* binary */
++
++	interp = arg = NULL;
++	if (head[0] == '#' && head[1] == '!') {
++		p = strchrnul(head, '\n');
++		if (*p == '\0' && n == (int)sizeof(head) - 1)
++			return; /* shebang line too long to trust */
++		*p = '\0';
++		interp = skip_whitespace(head + 2);
++		p = skip_non_whitespace(interp);
++		if (*p) {
++			*p++ = '\0';
++			arg = skip_whitespace(p);
++		}
++		interp = (char*) bb_basename(interp);
++		if (strcmp(interp, "env") == 0) {
++			/* "#!/usr/bin/env [-S] [VAR=val] prog [arg]" */
++			interp = arg;
++			while (interp && *interp) {
++				p = skip_non_whitespace(interp);
++				if (*interp != '-' && !memchr(interp, '=', p - interp))
++					break;
++				interp = skip_whitespace(p);
++			}
++			if (!interp || !*interp)
++				return;
++			p = skip_non_whitespace(interp);
++			arg = NULL;
++			if (*p) {
++				*p++ = '\0';
++				arg = skip_whitespace(p);
++			}
++			interp = (char*) bb_basename(interp);
++		}
++		if (arg) {
++			trim(arg);
++			if (!*arg)
++				arg = NULL;
++		}
++		if (!*interp)
++			return;
++		for (s = shells; *s; s += strlen(s) + 1) {
++			if (strcmp(interp, s) == 0) {
++				interp = NULL; /* run it ourselves */
++				if (arg && arg[0] != '-')
++					arg = NULL;
++				break;
++			}
++		}
++	}
++
++	for (argc = 0; argv[argc]; argc++)
++		continue;
++	nargv = xmalloc((argc + 4) * sizeof(nargv[0]));
++	i = 0;
++	nargv[i++] = interp ? interp : (char*) "ash";
++	if (arg)
++		nargv[i++] = arg;
++	nargv[i++] = (char*) cmd;
++	for (n = 1; n < argc; n++)
++		nargv[i++] = argv[n];
++	nargv[i] = NULL;
++
++	if (!interp
++#if ENABLE_FEATURE_SH_STANDALONE
++	 || find_applet_by_name(interp) >= 0
++#endif
++	) {
++		execve(bb_busybox_exec_path, nargv, envp);
++	} else {
++		path = pathval();
++		while (*path) {
++			n = strcspn(path, ":");
++			p = xasprintf("%.*s/%s", n ? n : 1, n ? path : ".", interp);
++			execve(p, nargv, envp);
++			free(p);
++			path += n;
++			if (*path == ':')
++				path++;
++		}
++	}
++	free(nargv);
++}
++
+ static void
+ tryexec(IF_FEATURE_SH_STANDALONE(int applet_no,) const char *cmd, char **argv, char **envp)
+ {
+@@ -8317,6 +8428,10 @@
+ 		argv[0] = (char*) "ash";
+ 		goto repeat;
+ 	}
++	if (cmd != bb_busybox_exec_path && errno == EACCES) {
++		android_exec_script(cmd, argv, envp);
++		errno = EACCES;
++	}
+ }
+ 
+ /*

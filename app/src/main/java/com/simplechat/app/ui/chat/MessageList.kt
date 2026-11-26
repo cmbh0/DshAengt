@@ -107,6 +107,10 @@ fun MessageList(
      * 不给这块留白的话最后一条消息会永远被压在输入栏底下，滚不出来。
      */
     contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+    /**
+     * 条目级过渡（淡入 / 淡出 / 位移）开不开。**换会话期间必须关**，见条目上的说明。
+     */
+    animateItems: Boolean = true,
     onCopy: (UiMessage) -> Unit = {},
     onRegenerate: (UiMessage) -> Unit = {},
     /** 继续生成：接着这条回复往下写（只有扩展通道能续，见 `ContinuePolicy`）。 */
@@ -269,10 +273,26 @@ fun MessageList(
                  *
                  * 分界线也在这层里面：压缩完成那一瞬间它从一行变两行，
                  * 高度变化跟着条目一起插值，而不是把下面所有消息顶一下。
+                 *
+                 * ⚠️ **换会话期间不挂**（[animateItems] = false），否则会出重影：
+                 *
+                 * 换会话是「整份列表换成另一份」。在 `animateItem` 眼里，这是
+                 * 「屏上这几条全被删了 + 又新增了几条」：
+                 * - 被删的那几条（上一个会话的）**留在原地淡出**约 0.3 秒 ——
+                 *   它们是画在列表之上的一层残影，**不跟着滚动**；
+                 * - 新来的那几条同时淡入；之后几帧文字排版把高度撑开，下面的条目
+                 *   又被「位移动画」拖着慢慢归位，中途和上一条**叠在一起**。
+                 *
+                 * 平时这些都盖在换会话的那次溶解底下，只露出一点尾巴。但这时只要
+                 * 键盘一弹（列表整体上移去让位），残影不动、正文在动，两层字错开，
+                 * 就是肉眼可见的重影。
+                 *
+                 * 不挂这个修饰符 = 这段时间里条目没有任何过渡：旧的直接消失、
+                 * 新的直接就位。整个过程本来就罩在溶解里，不需要第二层动画。
                  */
                 modifier = Modifier
                     .fillMaxWidth()
-                    .animateItem(),
+                    .then(if (animateItems) Modifier.animateItem() else Modifier),
             ) {
                 MessageRow(
                     message = message,

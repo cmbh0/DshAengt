@@ -1,5 +1,7 @@
 package com.simplechat.app.ui.settings
 
+import com.simplechat.app.ui.common.relayClick
+import com.simplechat.app.ui.common.bounceHost
 import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -100,6 +102,7 @@ fun SchedulePage() {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .bounceHost()
                         .clip(RoundedCornerShape(SettingsDimens.CardCorner))
                         .background(colors.card),
                 ) {
@@ -216,7 +219,7 @@ private fun ScheduleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onEdit)
+            .relayClick(onClick = onEdit)
             .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

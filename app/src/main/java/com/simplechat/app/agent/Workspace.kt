@@ -24,16 +24,32 @@ enum class WorkspaceKind {
     /** 本机真实目录，例如 `/storage/emulated/0/Download/proj`。需要「所有文件访问」。 */
     DEVICE,
 
-    /** 容器内的工作区，例如 Ubuntu rootfs 里的 `/home/user/app`（以宿主机路径绑定）。 */
+    /**
+     * 旧版本的「容器工作区」（Ubuntu rootfs 里的目录，以宿主机路径绑定）。
+     *
+     * 2.5.0 起不再有容器，界面上也不再能选出这一种；枚举值留着只为了**读得出旧的绑定**
+     * —— 它就是一条普通的本机路径，行为与 [DEVICE] 完全一样。
+     */
     CONTAINER,
+}
+
+/** 已绑定的工作区此刻用不了的原因（见 [Workspace.problem]）。 */
+enum class WorkspaceProblem {
+    /** 目录在共享存储上，而「所有文件访问」没开 / 被收回了。 */
+    NO_PERMISSION,
+
+    /** 目录不在了：被删、改名、移走，或者存储还没挂上。 */
+    MISSING,
+
+    /** 目录在，但读不了。 */
+    UNREADABLE,
 }
 
 /**
  * 当前绑定的工作区。
  *
- * [path] 是**绝对路径**，始终指向一个宿主机上真实存在的目录 ——
- * 容器工作区也一样：proot/chroot 的 rootfs 落在存储上，对它来说那就是一条普通路径。
- * 因此下层（Shell / 工具 / 终端）不需要关心 [kind]，只认 [File]。
+ * [path] 是**绝对路径**，指向设备上的一个真实目录。
+ * 下层（Shell / 工具 / 终端）不需要关心 [kind]，只认 [File]。
  */
 data class WorkspaceInfo(
     val kind: WorkspaceKind,
@@ -52,11 +68,10 @@ data class WorkspaceInfo(
  *
  * ### 绑定
  *
- * 三种来源（见 [WorkspaceKind]），同一时刻只有一份生效：
+ * 两种来源（见 [WorkspaceKind]），同一时刻只有一份生效：
  * ```
  * 内置：/data/data/<pkg>/files/workspace      ← 默认，永远可用
  * 本机：/storage/emulated/0/Download/proj     ← 需要「所有文件访问」
- * 容器：/storage/emulated/0/ubuntu/rootfs/app ← Ubuntu rootfs 里的目录
  * ```
  * 绑定关系落在 SharedPreferences，而不是 DataStore：它必须在**任何界面之前**
  * 生效（终端页、技能页都可能先于聊天页打开），同步读一行比等 Flow 稳。
@@ -88,8 +103,8 @@ object Workspace {
     /**
      * 启动时调用一次。
      *
-     * 先绑内置目录（保证立刻可用），再尝试恢复上次绑定；恢复失败（目录被删、
-     * 权限被收回）就静静留在内置目录 —— 这比抛异常让 App 起不来合理得多。
+     * 先落在内置目录（保证立刻可用），再恢复上次的绑定。上次绑的目录此刻访问不到
+     * （被删、权限被收回）**绑定也照样恢复**，原因由 [problem] 给出 —— 见 [restore]。
      */
     fun init(app: Context, filesDir: File) {
         context = app.applicationContext
@@ -110,12 +125,71 @@ object Workspace {
         restore(path, kind, label)
     }
 
-    /** 恢复一个已保存的绑定。目录不存在或不合法时返回 false，当前绑定不变。 */
+    /**
+     * 恢复上次的绑定（启动时调用）。返回目录此刻能不能访问。
+     *
+     * **目录不可访问也照样恢复绑定。** 早先这里看到 `isDirectory == false` 就直接
+     * 放弃，工作区于是悄悄退回「未绑定」：文件工具整套消失，模型只会说「我没有
+     * 读写文件的能力」，而用户明明绑过。目录访问不到的原因多半是暂时的或可修的
+     * （「所有文件访问」被收回、存储还没挂好、文件夹改了名），该做的是保留绑定、
+     * 在用到的那一刻把**具体原因**说出来 —— 见 [accessProblem]。
+     */
     fun restore(path: String, kind: WorkspaceKind, label: String): Boolean {
         val dir = File(path)
-        if (!dir.isDirectory) return false
         _current.value = WorkspaceInfo(kind, dir.absolutePath, label.ifBlank { dir.name })
-        return true
+        return dir.isDirectory
+    }
+
+    /** 当前工作区此刻用不了的原因；一切正常返回 null。未绑定（NONE）不算问题。 */
+    fun problem(): WorkspaceProblem? {
+        val info = _current.value
+        if (info.kind == WorkspaceKind.NONE || info.path.isBlank()) return null
+        val dir = File(info.path)
+        return when {
+            onSharedStorage(info.path) && !hasStorageAccess() -> WorkspaceProblem.NO_PERMISSION
+            !dir.isDirectory -> WorkspaceProblem.MISSING
+            !dir.canRead() -> WorkspaceProblem.UNREADABLE
+            else -> null
+        }
+    }
+
+    /**
+     * [problem] 的文字版，**写给模型看**：「发生了什么 + 该让用户做什么」。
+     * 界面上用的是各自的字符串资源，不复用这一句。
+     */
+    fun accessProblem(): String? {
+        val info = _current.value
+        return when (problem() ?: return null) {
+            WorkspaceProblem.NO_PERMISSION ->
+                "工作区「${info.label}」在共享存储上（${info.path}），但 App 现在没有「所有文件访问」权限，" +
+                    "读写都会失败。请用户到「设置 → 权限管理」把它打开，然后重试。"
+            WorkspaceProblem.MISSING ->
+                "工作区目录不存在或无法访问：${info.path}。它可能被删除、改名或移走了，请用户重新选择工作区。"
+            WorkspaceProblem.UNREADABLE ->
+                "没有读取工作区目录的权限：${info.path}。请用户重新选择工作区。"
+        }
+    }
+
+    /** 路径是不是落在共享存储上（应用自己的 Android/data 目录不算，那里不需要权限）。 */
+    internal fun onSharedStorage(path: String): Boolean {
+        val shared = path == "/sdcard" || path.startsWith("/sdcard/") ||
+            path.startsWith("/storage/") || path.startsWith("/mnt/sdcard")
+        if (!shared) return false
+        val own = context?.packageName ?: return true
+        return !path.contains("/Android/data/$own") && !path.contains("/Android/media/$own")
+    }
+
+    private fun hasStorageAccess(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            return runCatching { android.os.Environment.isExternalStorageManager() }.getOrDefault(true)
+        }
+        val app = context ?: return true
+        return listOf(
+            android.Manifest.permission.READ_EXTERNAL_STORAGE,
+            android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        ).all {
+            app.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
     }
 
     /**
@@ -127,6 +201,18 @@ object Workspace {
     fun bind(path: String, kind: WorkspaceKind, label: String? = null): Result<WorkspaceInfo> {
         val dir = runCatching { File(path).canonicalFile }.getOrElse {
             return Result.failure(IllegalArgumentException("路径不合法：$path"))
+        }
+        /*
+         * 共享存储上的目录先看权限，再看目录本身。
+         *
+         * 没有「所有文件访问」时 `isDirectory` / `canRead` 对 /storage/emulated/0 下的
+         * 目录照样可能返回 true（系统给的是一个只看得到媒体文件的过滤视图），于是绑定
+         * 「成功」了，之后却列不出文件、写不进去。在入口拦住，并说清楚要去哪儿开。
+         */
+        if (kind != WorkspaceKind.INTERNAL && onSharedStorage(dir.path) && !hasStorageAccess()) {
+            return Result.failure(
+                SecurityException("还没有「所有文件访问」权限，绑定了也读写不了。先到「设置 → 权限管理」打开它。"),
+            )
         }
         if (!dir.isDirectory) return Result.failure(IllegalArgumentException("目录不存在：${dir.path}"))
         if (!dir.canRead()) return Result.failure(SecurityException("没有读取权限：${dir.path}"))
@@ -279,7 +365,7 @@ object Workspace {
 
     /**
      * App 上下文。只给需要 `PackageManager` / `nativeLibraryDir` 的地方用
-     * （目前只有 [UbuntuEnv] 取 proot 的路径）—— 其余一律走 [appDir]，别把
+     * （目前只有 [MuslEnv] 取 nativeLibraryDir 与缓存目录）—— 其余一律走 [appDir]，别把
      * Context 散播到工具层里，那会让它们离不开 Activity 生命周期。
      */
     fun appContextOrNull(): Context? = context
@@ -329,27 +415,72 @@ object Workspace {
     fun kind(): WorkspaceKind = _current.value.kind
 
     /**
-     * 把模型给的路径解析成真实文件。
+     * 把模型给的路径解析成工作区内的真实文件。
      *
-     * 规则：
-     * - 绝对路径按**相对根目录**处理（模型常写 `/notes/a.md`，这在沙箱里就是根下的 a）
-     * - `..` 越界直接拒绝，不做"就地截断"——截断会让模型以为写成功了
+     * 三种写法都认：
+     *
+     * - **相对路径** `src/main.kt` —— 相对工作区根；
+     * - **落在工作区里的绝对路径** `/storage/emulated/0/Proj/src/main.kt` —— 原样使用。
+     *   系统提示词里写着工作区的真实位置，`run_shell` 里用的也是它，模型自然会把
+     *   同一个路径交给文件工具。早先这种写法会被当成「根下面的相对路径」，拼成
+     *   `<根>/storage/emulated/0/Proj/…`：读报「文件不存在」，写则在工作区里新建
+     *   一串嵌套目录并报成功，而用户想改的那个文件纹丝不动；
+     * - **以 `/` 开头、但指的是工作区根** `/notes/a.md` —— 把工作区当成 `/` 的写法，
+     *   按相对路径处理。
+     *
+     * 指向工作区**之外**的真实设备路径（`/sdcard/Download/x`）直接报越界，
+     * 不再悄悄映射进工作区。
+     *
+     * @throws SecurityException 路径越界
+     * @throws IllegalStateException 工作区当前不可访问（原因见 [accessProblem]）
      */
     fun resolve(path: String): File {
+        accessProblem()?.let { throw IllegalStateException(it) }
         val base = requireRoot().canonicalFile
         val cleaned = path.trim().removePrefix("file://")
-        val candidate = if (cleaned.startsWith("/")) {
-            File(base, cleaned.trimStart('/'))
-        } else {
-            File(base, cleaned)
-        }
-        val canonical = candidate.canonicalFile
-        val basePath = base.path
-        val target = canonical.path
-        if (target != basePath && !target.startsWith(basePath + File.separator)) {
+        if (!cleaned.startsWith("/")) return confine(File(base, cleaned), base, path)
+
+        // 真实的绝对路径，且就在工作区里
+        val absolute = runCatching { File(cleaned).canonicalFile }.getOrNull()
+        if (absolute != null && inside(absolute, base)) return absolute
+        // 字面上从工作区根出发、解析完却到了外面（`<根>/../别处`）：明确的越界，不往回映射
+        val literalRoots = listOf(base.path, _current.value.path).filter { it.isNotBlank() }
+        if (literalRoots.any { cleaned == it || cleaned.startsWith("$it/") }) {
             throw SecurityException("路径越界：$path")
         }
+
+        // 把工作区当根的写法
+        val virtual = confine(File(base, cleaned.trimStart('/')), base, path)
+        val plausible = virtual.exists() || virtual.parentFile?.isDirectory == true
+        if (!plausible && looksLikeDevicePath(cleaned)) {
+            throw SecurityException(
+                "路径在工作区之外：$cleaned。文件工具只能读写工作区（${base.path}）里的东西，请改用相对路径。",
+            )
+        }
+        return virtual
+    }
+
+    private fun inside(file: File, base: File): Boolean =
+        file.path == base.path || file.path.startsWith(base.path + File.separator)
+
+    private fun confine(candidate: File, base: File, original: String): File {
+        val canonical = candidate.canonicalFile
+        if (!inside(canonical, base)) throw SecurityException("路径越界：$original")
         return canonical
+    }
+
+    /**
+     * 看起来是不是一条真实的安卓设备路径。
+     *
+     * 只在「按工作区内路径解释说不通」时才用它判越界（见 [resolve]）：工程里叫
+     * `data/`、`system/` 的顶层目录很常见，不能光凭名字就把 `/data/train.csv` 拒掉。
+     */
+    internal fun looksLikeDevicePath(path: String): Boolean {
+        val exact = listOf("/sdcard", "/storage", "/mnt", "/proc", "/dev", "/sys", "/system", "/vendor", "/apex")
+        if (exact.any { path == it || path.startsWith("$it/") }) return true
+        // /data 下面只有这几个子目录是系统的；别的（/data/train.csv）更像工程里的目录
+        return listOf("/data/user/", "/data/data/", "/data/local/", "/data/app/", "/data/media/", "/data/misc/")
+            .any { path.startsWith(it) }
     }
 
     /** 相对根目录的展示路径，用于工具回执里给模型看。 */
@@ -373,9 +504,6 @@ object Workspace {
             "/storage/emulated/0" to "内部存储",
             "/storage/emulated/0/Download" to "下载",
             "/storage/emulated/0/Documents" to "文档",
-            "/storage/emulated/0/ubuntu" to "Ubuntu 容器",
-            "/storage/emulated/0/ubuntu/rootfs" to "Ubuntu rootfs",
-            File(files, "rootfs").absolutePath to "内置 rootfs",
             "/data/local/tmp" to "临时目录",
         ).forEach { (path, label) ->
             val dir = File(path)

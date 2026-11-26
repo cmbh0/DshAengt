@@ -1,10 +1,10 @@
 # DSHA
 
-> A lightweight, natively fast AI chat client for Android. Built with Jetpack Compose; the R8-minified release APK is about 3.8 MB.
+> A lightweight, natively fast AI chat client for Android. Built with Jetpack Compose; the R8-minified release APK is about 7.3 MB (including native runtimes for arm64 and x86_64).
 
 **[中文](README.md) | English**
 
-[![Version](https://img.shields.io/badge/version-2.4.1-blue)](https://github.com/cmbh0/DshAengt/releases)
+[![Version](https://img.shields.io/badge/version-2.5.0-blue)](https://github.com/cmbh0/DshAengt/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ## Introduction
@@ -82,7 +82,7 @@ Good for:
 - **Sidebar sections**: conversations are grouped by **workspace ownership**, not dumped into one reverse-chronological list — plain chats, built-in workspace and cloud workspaces each get their own section, with pinned on top. Every section carries a second line naming what lives there (root directory, environment name), so a few hundred conversations stay navigable. Move a conversation to another workspace and it changes section immediately.
 - **Thinking-stage calls are void**: a model sometimes emits `tool_calls` while its reasoning channel is still streaming — those arguments are half-finished (no path chosen, command not assembled) and running them only damages the workspace. The judge is **order**, not a special tool: if a reasoning delta arrives *after* a tool-call delta, that whole batch is discarded and the model is told to finish thinking and send it again. Well-behaved models ("think → speak → act") never trip this. When a tool fails a second time with the same arguments the receipt gains a `[repeated failure]` note that pushes the model to change approach instead of retrying; and a reply that carries reasoning but no text triggers one automatic nudge rather than leaving you with an empty bubble.
 - **Dual-pane file manager**: MT-style multi-select — swipe a row right and the **whole row follows your finger**, revealing a check circle on the left; crossing the 34 dp threshold buzzes once, and only releasing there actually selects it (fall short and it springs back). Swipe the first row then the third and everything in between is selected; each pane keeps its own selection. Selections are tracked per pane, but **delete removes everything selected in both panes** — selecting a screenful and losing one file would make multi-select pointless. Long-pressing a row while in selection mode toggles it instead of opening the single-item action sheet. In selection mode the bottom bar turns into select-all / invert / copy / move / delete, and *New* no longer only creates folders — it creates files too.
-- **On-device Ubuntu**: a 30 MB ubuntu-base image is pulled from a domestic mirror, unpacked into app-private storage and run with the bundled proot — so the phone gets a real bash: `apt install gcc` works, `pip` works, `/bin/bash` is GNU bash. The AI reaches it through `linux_shell` / `install_packages`, and the workspace is mapped to `/workspace` inside the container (`src/main.py` and `/workspace/src/main.py` are the same file). apt and pip are pre-pointed at Tsinghua mirrors; `--link2symlink` (with its proxy directory inside the rootfs) plus a separate `/tmp` bind fix the hard-link and temp-file failures that make dpkg/npm installations die halfway. Absolute symlinks inside the rootfs are rewritten to relative ones on extraction, and the `/bin/sh` → `/usr/bin/env` boot chain is verified — otherwise you get "extracted successfully" followed by `execve ENOENT` on the first command. **Two proot builds ship together** — an Android-native bionic PIE build and the upstream static one — each paired with its own matching loader. After installing, the daily profile is tried first; if it fails, a bare run with `-v 2` is used to make proot show where it died. No output at all means that build cannot start on this device, so the other one is tried immediately instead of burning the install window on a dead end; with output, the chain walks down p8→p0. The winning combination is recorded in `launch.plan` (e.g. `bionic:p8`) and used from then on; only when nothing works does it fail, with the raw stderr of every profile attached.
+- **On-device runtime (musl + BusyBox)**: the APK ships a static musl 1.2.5 loader plus BusyBox 1.37.0 (ash and some two hundred commands) that execute natively on Android — no emulation layer. Python is a musl build of CPython 3.12 (python-build-standalone) downloaded on demand and started through the bundled musl. The AI reaches the runtime through `run_shell` / `python` / `install_packages`, with commands running in the workspace root; `pip` installs pure-Python packages and musllinux wheels (numpy, pandas and friends verified). **apt and npm are no longer provided**; an Ubuntu environment left over from an older version can be removed in one tap on the Runtime screen. proot and the Ubuntu rootfs are gone entirely.
 - **Screen control**: two channels (accessibility / root) × two recognition pipelines (layout node tree / screenshot plus coordinates). You pick the channel and **it is never silently swapped afterwards** — choose root and only root is used; if it is not authorised you get one actionable sentence instead of "it happened to go through accessibility this time". Every action leaves a touch point and trail on screen, and screenshots are deleted as soon as the model has read them.
 - Data out: JSON backup, **ZIP archive** (backup plus a Markdown document per conversation) and Markdown export; imports this app's backups, ZIP archives, Chatbox backups and DeepSeek official exports (deepseek_data-*.zip), with three import modes: add new only, overwrite same name, or keep both. Import results are reconciled item by item (how many in the archive, how many imported, which ones failed and why), so nothing disappears silently.
 - Search: full-text over titles and bodies, with hit snippets in the results.
@@ -158,7 +158,7 @@ When the file is missing, `assembleRelease` falls back to the **debug signature*
 ## Development
 
 ```bash
-./gradlew testDebugUnitTest    # unit tests (695)
+./gradlew testDebugUnitTest    # unit tests (734)
 ./gradlew assembleDebug        # debug build, package suffix .debug
 ./gradlew assembleRelease      # release build, needs signing config
 ```
@@ -217,16 +217,14 @@ The design documents and implementation records are **internal and not part of t
 
 ## Referenced projects
 
-- [ZakoCoder](https://github.com/AYssu/ZakoCoder): reference implementation for the on-device Ubuntu
-  (proot) runtime — `--link2symlink` with `PROOT_L2S_DIR`, binding the host `/tmp` into the container,
-  pointing `PROOT_LOADER` at a bundled loader, and the post-install self-test all came from reading it.
+- [ZakoCoder](https://github.com/AYssu/ZakoCoder): reference for the proot-based runtime of 2.4.x
+  (`--link2symlink`, the `/tmp` bind, post-install self-test). Since 2.5.0 the runtime is a
+  native musl + BusyBox scheme and all proot code and binaries are gone.
 - [Operit](https://github.com/AAswordman/Operit) / [OperitTerminalCore](https://github.com/AAswordman/OperitTerminalCore):
   reference for MCP tool wiring and the AI image-generation flow (tool discovery, tool cards, letting
   the model drive the drawing instead of rewriting the reply client-side); on the terminal side, for
-  running an **Android-native (bionic PIE) proot with its matching loader taken from
-  `nativeLibraryDir`** — the first bundled build is that route, with the static build kept as fallback.
-
-proot itself is GPL-2.0 and ships with the APK in two builds; its source is available upstream.
+  the trick of **shipping executables under `lib*.so` names inside `nativeLibraryDir` and running
+  them from there** — the 2.5.0 musl / BusyBox / CPython entry points still use that route.
 
 ## Contributing
 

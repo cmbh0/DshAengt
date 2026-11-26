@@ -429,7 +429,8 @@ private fun iconFor(name: String) = when {
     // 终端命令：终端图标。早先这里挂的是对话气泡（`Prompt`），
     // 一张"在跑命令"的卡片顶着聊天气泡的图标，语义完全错位。
     name == "run_shell" -> AppIcons.Terminal
-    // Ubuntu 那一族：同为终端，但用 Database 区分"容器里的系统"与"手机的 toybox"
+    // linux_shell / linux_env 是 2.4.x 的工具，2.5.0 起已经没有了；
+    // 映射留着是为了旧对话里的卡片还认得出来
     name == "linux_shell" -> AppIcons.Terminal
     name == "install_packages" -> AppIcons.Download
     name == "linux_env" -> AppIcons.Server

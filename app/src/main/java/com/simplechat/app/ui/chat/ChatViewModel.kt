@@ -53,7 +53,7 @@ import com.simplechat.app.agent.RemoteWorkspaces
 import com.simplechat.app.agent.Rewind
 import com.simplechat.app.agent.RewindReport
 import com.simplechat.app.agent.RewindTool
-import com.simplechat.app.agent.LinuxTools
+import com.simplechat.app.agent.RuntimeTools
 import com.simplechat.app.agent.ScreenAutomation
 import com.simplechat.app.agent.ScheduleTools
 import com.simplechat.app.agent.ScreenTools
@@ -448,6 +448,16 @@ class ChatViewModel(
         private set
     var profileAvatar by mutableStateOf("")
         private set
+
+    /**
+     * 首页图标的自定义图片路径。
+     *
+     * 三态：`null` = 设置还没读出来；`""` = 用默认图标；其余 = 自定义图片。
+     * 「还没读出来」必须和「默认」分开 —— 冷启动的头几帧设置尚未就绪，
+     * 那时若先画默认图标，换过图标的用户每次打开都会看到它闪一下再变成自己的图。
+     */
+    var homeIcon by mutableStateOf<String?>(null)
+        private set
     private var previousProviderKind: ProviderKind? = null
 
     /** 上一次见到的端点，用来判断"模型列表该不该作废 / 换一份"。 */
@@ -618,9 +628,9 @@ class ChatViewModel(
          */
         val bound = Workspace.current.value.kind != WorkspaceKind.NONE
         val base = if (bound) BuiltinTools.all(client) else emptyList()
-        // Ubuntu 没装就不挂 linux_shell / install_packages：挂了也只能返回
-        // "还没装"，白占工具表的位置，还让模型多试一次
-        val linux = if (bound && LinuxTools.available()) LinuxTools.all() else emptyList()
+        // install_packages 只在内置环境可用的设备上挂：32 位设备上没有 Python，
+        // 挂了也只能返回"装不了"，白占工具表的位置
+        val linux = if (bound && RuntimeTools.available()) RuntimeTools.all() else emptyList()
         /*
          * 联网搜索（`web_search` / `web_open`）**只在「内置浏览器」技能启用时**挂上去。
          * 关掉之后模型连这两个名字都看不到 —— 不是"看得见但调用失败"，那种设计会让它
@@ -804,6 +814,7 @@ class ChatViewModel(
         approvalMode = ApprovalMode.fromId(value.approvalModeId)
         profileName = value.userName
         profileAvatar = value.userAvatar
+        homeIcon = value.homeIcon
         settings = settings.copy(
             model = baseModel.copy(contextWindow = window),
             persona = value.userPersona,
@@ -3141,7 +3152,8 @@ class ChatViewModel(
                  * 提示词里提到一个不存在的能力，比不提更糟：模型会去调它，然后
                  * 拿到"没有这个工具"，接着浪费两轮猜原因。
                  */
-                linux = cloud == null && LinuxTools.available(),
+                linux = cloud == null && RuntimeTools.available(),
+                python = cloud == null && com.simplechat.app.agent.MuslPython.isInstalled(),
                 web = BuiltinSkills.enabled(BuiltinSkills.Browser),
                 ssh = cloud?.isSsh == true,
                 // 没绑工作区：提示词里不能出现任何路径，否则它会照着编
@@ -3161,12 +3173,18 @@ class ChatViewModel(
             // NONE = 普通对话：目录还是内置那个，模型不需要知道"有没有绑过工作区"
             if (info.kind != WorkspaceKind.INTERNAL && info.kind != WorkspaceKind.NONE) {
                 appendLine()
-                appendLine(
-                    when (info.kind) {
-                        WorkspaceKind.CONTAINER -> "当前工作区是容器内的目录（${info.path}），按宿主路径直接读写即可。"
-                        else -> "当前工作区绑定在本机目录（${info.path}）。"
-                    },
-                )
+                // CONTAINER 是旧版本留下的绑定，现在就是一条普通的本机路径
+                appendLine("当前工作区绑定在本机目录（${info.path}）。")
+            }
+            /*
+             * 工作区此刻访问不到（权限被收回、目录没了）就**先说**。
+             *
+             * 不说的话，模型要到第一次调用失败才知道，而它对「工具异常」的第一反应
+             * 是换个参数再试；提前给出原因，它第一句话就能告诉用户该去开哪个权限。
+             */
+            Workspace.accessProblem()?.let { problem ->
+                appendLine()
+                appendLine("⚠️ 工作区当前不可用：$problem 在它恢复之前，文件工具和命令都会失败，请先把这一点告诉用户。")
             }
         }
         val skills = runCatching { SkillStore.enabledPromptBlock() }.getOrDefault("")

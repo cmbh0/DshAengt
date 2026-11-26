@@ -1,5 +1,6 @@
 package com.simplechat.app.ui.screen
 
+import com.simplechat.app.ui.common.bounceHost
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -131,6 +132,7 @@ fun ScreenScreen(onBack: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .bounceHost()
                     // 先裁再上色：圆角与别的卡片同一个值，点按的水波纹也不会溢出四个角
                     .clip(RoundedCornerShape(SettingsDimens.CardCorner))
                     .background(colors.card),
@@ -172,6 +174,7 @@ fun ScreenScreen(onBack: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .bounceHost()
                     .clip(RoundedCornerShape(SettingsDimens.CardCorner))
                     .background(colors.card),
             ) {

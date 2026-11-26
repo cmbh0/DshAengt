@@ -1,24 +1,32 @@
 package com.simplechat.app.agent
 
+import android.system.Os
+import android.system.OsConstants
 import java.io.File
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * 命令执行。
+ * 在本机执行 shell 命令。
  *
- * 用 `sh -c` 而不是自己拆参数：模型天然按 shell 语法写命令（管道、重定向、`&&`），
- * 拆开反而要自己实现一遍 shell 语义，还容易出错。
+ * ### 跑在什么上面
  *
- * 三条硬约束，都是为了不让一次工具调用把 App 拖死：
- * - **超时**：默认 30 秒，超时 kill -9 整棵进程树
- * - **输出上限**：超长输出截断并标注，否则一次 `cat` 大文件就能把上下文烧光
- * - **工作目录固定**在工作区内，`cd` 只在这个进程内有效
+ * 首选 APK 自带的 musl 工具箱（[MuslEnv]）：静态链接的 BusyBox，`ash` 加两百来个
+ * 命令，直接跑在手机内核上，没有容器、没有 ptrace 翻译层。装了 Python 的话
+ * `python3` / `pip` 也在 `PATH` 里。
+ *
+ * 工具箱跑不起来的设备（32 位 CPU，或者自检没过）回落到系统的 `/system/bin/sh`
+ * —— 能力少一截，但 `ls` / `cat` / `cp` 这些仍然能用，不至于整个 shell 没了。
+ *
+ * ### 两条硬约束
+ *
+ * - **必须有超时**。模型很容易写出 `tail -f`、`sleep 9999` 或等 stdin 的命令，
+ *   没有超时这一轮对话就永远挂着。
+ * - **输出要截断**。一条 `cat` 大文件能产出几 MB，全塞进上下文既贵又没用，
+ *   头部通常已经足够模型判断。
  */
 object Shell {
 
-    /** 单次执行的输出上限（字符）。超出部分丢弃并附一行说明。 */
     private const val MaxOutputChars = 24_000
 
     data class Result(
@@ -28,10 +36,10 @@ object Shell {
         val timedOut: Boolean,
         val truncated: Boolean,
     ) {
-        /** 给模型看的合并文本。空输出也要有话说，否则模型以为工具挂了。 */
         fun asToolOutput(): String = buildString {
             append("exit=").append(exitCode)
             if (timedOut) append("（超时被终止）")
+            signalHint(exitCode)?.let { append("（").append(it).append("）") }
             if (stdout.isNotBlank()) {
                 append("\n--- stdout ---\n").append(stdout.trimEnd())
             }
@@ -43,32 +51,89 @@ object Shell {
         }
     }
 
+    /**
+     * 退出码大于 128 说明进程是被信号杀掉的。几个常见的翻译成人话 ——
+     * 模型看到「exit=137」多半会当成普通失败去重试，而那其实是内存不够。
+     */
+    internal fun signalHint(exitCode: Int): String? = when (exitCode) {
+        137 -> "被 SIGKILL 终止，通常是内存不足或被系统回收"
+        139 -> "段错误 SIGSEGV"
+        143 -> "被 SIGTERM 终止"
+        159 -> "被系统的 seccomp 过滤器拦下：用到了安卓不允许应用调用的系统调用"
+        else -> null
+    }
+
+    /**
+     * 执行一条命令。
+     *
+     * @param cwd 工作目录，默认工作区根。目录不存在时不会去建 —— 那多半是工作区
+     *   被删了或权限丢了，悄悄建一个空目录只会把问题藏起来。
+     */
     suspend fun run(
         command: String,
         cwd: File = Workspace.requireRoot(),
         timeoutSeconds: Long = 30,
+    ): Result {
+        // 首次调用要建目录、建软链、起一次自检进程，不能落在主线程上
+        val musl = withContext(Dispatchers.IO) { MuslEnv.prepare() }
+        return if (musl != null) {
+            exec(
+                argv = listOf(musl.busybox, "setsid", "sh", "-c", command),
+                cwd = cwd,
+                environment = musl.environment,
+                timeoutSeconds = timeoutSeconds,
+                ownGroup = true,
+            )
+        } else {
+            exec(
+                argv = listOf("/system/bin/sh", "-c", command),
+                cwd = cwd,
+                environment = mapOf(
+                    "HOME" to cwd.absolutePath,
+                    "TMPDIR" to cwd.absolutePath,
+                    // 让多数 CLI 关掉交互式彩色输出，减少无意义控制字符
+                    "TERM" to "dumb",
+                    "NO_COLOR" to "1",
+                ),
+                timeoutSeconds = timeoutSeconds,
+                ownGroup = false,
+            )
+        }
+    }
+
+    /**
+     * 起一个进程并等它结束。
+     *
+     * @param ownGroup 进程自己是一个进程组的组长（命令是经 `setsid` 起的）。
+     *   为真时超时 / 取消会把**整个组**杀掉 —— 只杀 `sh` 的话，它正在等的
+     *   `sleep`、`python3` 会变成孤儿继续跑，占着 CPU 和文件锁。
+     */
+    internal suspend fun exec(
+        argv: List<String>,
+        cwd: File,
+        environment: Map<String, String>,
+        timeoutSeconds: Long,
+        ownGroup: Boolean,
+        dropFromEnvironment: Set<String> = MuslEnv.DroppedVariables,
     ): Result = withContext(Dispatchers.IO) {
+        if (!cwd.isDirectory) {
+            return@withContext failure("工作目录不存在或无法访问：${cwd.path}")
+        }
         val process = try {
-            ProcessBuilder("/system/bin/sh", "-c", command)
+            ProcessBuilder(argv)
                 .directory(cwd)
                 .redirectErrorStream(false)
                 .apply {
-                    environment()["HOME"] = cwd.absolutePath
-                    environment()["TMPDIR"] = cwd.absolutePath
-                    // 让多数 CLI 关掉交互式彩色输出，减少无意义控制字符
-                    environment()["TERM"] = "dumb"
-                    environment()["NO_COLOR"] = "1"
+                    val env = environment()
+                    dropFromEnvironment.forEach(env::remove)
+                    env.putAll(environment)
                 }
                 .start()
         } catch (e: Exception) {
-            return@withContext Result(
-                stdout = "",
-                stderr = "无法启动 shell：${e.message}",
-                exitCode = -1,
-                timedOut = false,
-                truncated = false,
-            )
+            return@withContext failure("无法启动 shell：${e.message}")
         }
+        // 命令不读 stdin；不关掉的话 `cat`、`read` 这类会一直等到超时
+        runCatching { process.outputStream.close() }
 
         // 读流必须并发，否则管道缓冲写满会互相等死
         val outReader = Reader(process.inputStream.bufferedReader(), MaxOutputChars)
@@ -77,10 +142,19 @@ object Shell {
         val errThread = Thread(errReader, "shell-err").apply { isDaemon = true; start() }
 
         /*
-         * 可取消等待（见 `awaitProcess`）：用户按「停止」时这条命令要**立刻**死，
-         * 而不是继续阻塞到超时。早先直接 `waitFor(timeout)`，协程取消打不断它。
+         * 超时或被取消时把整个组收掉；**正常结束不收**。
+         *
+         * 命令自己放到后台的东西（`python3 -m http.server &`）是模型故意留下的，
+         * 下一条命令多半就要用它，跟着 shell 一起杀掉等于这个用法直接作废。
          */
-        val finished = awaitProcess(process, timeoutSeconds)
+        val group = if (ownGroup) pidOf(process) else null
+        val finished = try {
+            awaitProcess(process, timeoutSeconds)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            group?.let(::killGroup)
+            throw e
+        }
+        if (!finished) group?.let(::killGroup)
         outThread.join(1_000)
         errThread.join(1_000)
 
@@ -93,7 +167,29 @@ object Shell {
         )
     }
 
-    /** 边读边计数，到上限就停止累积（但仍然把流读空，避免子进程阻塞）。 */
+    private fun failure(message: String) = Result(
+        stdout = "",
+        stderr = message,
+        exitCode = -1,
+        timedOut = false,
+        truncated = false,
+    )
+
+    /**
+     * 进程号。
+     *
+     * `Process.pid()` 要到很新的系统才有，而安卓的实现从一开始就把 pid 写在
+     * `toString()` 里（`Process[pid=1234, hasExited=false]`）。认不出来就返回 null，
+     * 调用方退回到只杀直接子进程。
+     */
+    internal fun pidOf(process: Process): Int? =
+        Regex("pid=(\\d+)").find(process.toString())?.groupValues?.get(1)?.toIntOrNull()
+
+    private fun killGroup(pid: Int) {
+        // 负数 = 整个进程组。组已经空了会抛 ESRCH，正是想要的结果
+        runCatching { Os.kill(-pid, OsConstants.SIGKILL) }
+    }
+
     private class Reader(private val source: java.io.BufferedReader, private val limit: Int) : Runnable {
         private val buffer = StringBuilder()
         @Volatile var truncated = false
@@ -104,17 +200,19 @@ object Shell {
                 while (true) {
                     val read = source.read(chunk)
                     if (read <= 0) break
-                    if (buffer.length < limit) {
-                        val room = limit - buffer.length
-                        buffer.append(chunk, 0, minOf(read, room))
-                        if (read > room) truncated = true
-                    } else {
-                        truncated = true
+                    synchronized(buffer) {
+                        if (buffer.length < limit) {
+                            val room = limit - buffer.length
+                            buffer.append(chunk, 0, minOf(read, room))
+                            if (read > room) truncated = true
+                        } else {
+                            truncated = true
+                        }
                     }
                 }
             }
         }
 
-        fun text(): String = buffer.toString()
+        fun text(): String = synchronized(buffer) { buffer.toString() }
     }
 }

@@ -1,5 +1,6 @@
 package com.simplechat.app.ui.chat
 
+import com.simplechat.app.ui.common.bounceClick
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -143,9 +144,11 @@ private fun ArtifactChip(path: String, onClick: () -> Unit, modifier: Modifier =
     val colors = LocalChatColors.current
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(colors.fieldBackground)
-            .clickable(onClick = onClick)
+            .bounceClick(
+                shape = RoundedCornerShape(8.dp),
+                background = colors.fieldBackground,
+                onClick = onClick,
+            )
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

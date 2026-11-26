@@ -100,7 +100,6 @@ fun TerminalScreen(onBack: () -> Unit) {
 
     val lines by session.lines.collectAsState()
     val busy by session.busy.collectAsState()
-    val ubuntu by session.ubuntu.collectAsState()
     val listState = rememberLazyListState()
     var input by remember(entry?.id) { mutableStateOf("") }
     var runJob by remember(entry?.id) { mutableStateOf<Job?>(null) }
@@ -151,24 +150,6 @@ fun TerminalScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
-            // AI 记录不切 shell：那些命令已经跑完了，切换只改标签上的字
-            if (session.ubuntuAvailable() && entry?.ai != true) {
-                Text(
-                    text = if (ubuntu) "Ubuntu" else "sh",
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = if (ubuntu) MaterialTheme.colorScheme.primary else colors.placeholder,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(7.dp))
-                        .border(
-                            width = 1.dp,
-                            color = if (ubuntu) MaterialTheme.colorScheme.primary else colors.outline,
-                            shape = RoundedCornerShape(7.dp),
-                        )
-                        .clickable { session.toggleShell() }
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-            }
             IconCircleButton(
                 icon = AppIcons.Trash,
                 contentDescription = Res.get(R.string.terminal_clear),

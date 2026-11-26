@@ -13,6 +13,16 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 所有文件访问：把工作区绑到 /storage/emulated/0/... 下的真实目录 -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!--
+        Android 10 及更早没有「所有文件访问」，同一件事靠的是这两项老权限。
+        之前没声明，那些系统上「选择文件夹」绑了也读写不了，而且权限页里根本没有可开的开关。
+    -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
     <!-- 悬浮窗：操作屏幕时在顶部显示"正在做什么"，让用户看得见 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- 定时提醒：精确闹钟（Android 12+ 需用户授权，没有就降级为非精确） -->
@@ -41,6 +51,7 @@
         android:name=".App"
         android:allowBackup="false"
         android:extractNativeLibs="true"
+        android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

@@ -644,6 +644,9 @@ fun ChatScreen(
      * 自绘目录树要自己处理权限、排序、隐藏目录，还容易在 Android 11+ 上
      * 读不到 Android/data；系统选择器天然避开这些，而且用户认得它。
      */
+    // 首页图标：点空白页正中那枚图标可以换成自己的图
+    val homeIconActions = com.simplechat.app.ui.common.rememberHomeIconActions()
+
     val workspaceTreePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri ->
@@ -1040,6 +1043,18 @@ fun ChatScreen(
     val dissolve = remember { Animatable(1f) }
     var previousConversationId by remember { mutableStateOf<String?>(null) }
 
+    /*
+     * 下面这个 effect 已经为哪个会话「拉上了幕布」（把 dissolve 置 0）。
+     *
+     * LaunchedEffect 的函数体要等**这一帧画完之后**才开始跑。所以会话 id 变掉的
+     * 那一帧，dissolve 还是 1：画出来的是「新的列表状态 + 上一个会话的消息」——
+     * 旧内容被甩到底部闪一帧，然后才变透明。
+     *
+     * 消息区的透明度因此多看一眼这个值：id 已经变了、幕布还没拉上，就当它是 0。
+     * 判断发生在**绘制阶段**（graphicsLayer 的 lambda 里），不用等任何协程。
+     */
+    var curtainFor by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(vm.currentConversationId) {
         val id = vm.currentConversationId
         val fromAnotherConversation = previousConversationId != null
@@ -1052,6 +1067,7 @@ fun ChatScreen(
         if (id == null) {
             switchingConversation = false
             dissolve.snapTo(1f)
+            curtainFor = null
             return@LaunchedEffect
         }
 
@@ -1075,6 +1091,8 @@ fun ChatScreen(
              * 把它一起盖进透明里，用户就只看到一次干净的淡入。
              */
             dissolve.snapTo(0f)
+            // 幕布已经拉上，之后的明暗全由 dissolve 说了算（见 curtainFor 的说明）
+            curtainFor = id
             awaitLoaded()
 
 
@@ -1090,10 +1108,27 @@ fun ChatScreen(
                 // 等**稳定 3 帧**再收工：第一次 atBottom=true 不代表终点，
                 // 长消息的文字布局还会再长几帧（实测差了一整截）。
                 var stable = 0
+                var lastPadding = listState.layoutInfo.afterContentPadding
                 while (stable < 3) {
                     listState.scrollToBottom()
                     withFrameNanos { }
-                    stable = if (listState.isAtBottom()) stable + 1 else 0
+                    /*
+                     * 「没贴底」要分清是谁造成的。
+                     *
+                     * 刚点开会话就点输入框的话，键盘正在升起：底部留白每一帧都在变大，
+                     * 于是每一帧都「差一点没贴底」—— 可那只是留白在变，内容的高度早就
+                     * 稳了。把这种帧也判成不稳定，消息就要等键盘动画放完（最坏等到
+                     * 超时）才肯显示，用户看到的是键盘上来了、上面却一片空白。
+                     *
+                     * 所以：离底部的距离**不超过这一帧留白长出来的那一截**，也算稳定。
+                     * 内容自己还在长的话，距离会比那一截更大，照旧重新计数。
+                     */
+                    val padding = listState.layoutInfo.afterContentPadding
+                    val paddingGrowth = (padding - lastPadding).coerceAtLeast(0)
+                    lastPadding = padding
+                    val settled = listState.isAtBottom() ||
+                        listState.distanceToBottom() <= paddingGrowth + 1f
+                    stable = if (settled) stable + 1 else 0
                 }
             }
             dissolve.animateTo(1f, tween(SwitchFadeInMs, easing = MotionEasing))
@@ -1291,7 +1326,11 @@ fun ChatScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = dissolve.value }
+                    .graphicsLayer {
+                        // 会话刚换、幕布还没拉上的那一帧：直接不画（见 curtainFor）
+                        val id = vm.currentConversationId
+                        alpha = if (id != null && id != curtainFor) 0f else dissolve.value
+                    }
                     // 点消息区空白处收键盘；不消费事件，气泡照常可点
                     .dismissKeyboardOnTouch()
             ) {
@@ -1302,7 +1341,12 @@ fun ChatScreen(
                             .fillMaxSize()
                             .padding(bottom = inputAreaPadding),
                     ) {
-                        EmptyState(modifier = Modifier.align(Alignment.Center))
+                        EmptyState(
+                            modifier = Modifier.align(Alignment.Center),
+                            iconPath = vm.homeIcon,
+                            onPickIcon = homeIconActions.pick,
+                            onResetIcon = homeIconActions.reset,
+                        )
                     }
                 } else {
                     // 这条对话绑的是哪台云端机器（没绑就是 null）——产物条与预览都要用
@@ -1342,6 +1386,16 @@ fun ChatScreen(
                             top = 12.dp,
                             bottom = inputAreaPadding + 12.dp,
                         ),
+                        /*
+                         * 换会话的整个过程里关掉条目过渡（原因见 MessageList 里的说明）。
+                         *
+                         * 两个标记缺一不可，它们各管一段：
+                         * - `vm.switching`：点下会话的**同一刻**就为真，直到新消息换进来。
+                         *   界面这边的标记要等 LaunchedEffect 启动才置位，晚一帧 ——
+                         *   而那一帧里旧条目若还带着过渡，换内容时就已经来不及撤了。
+                         * - `switchingConversation`：新消息换进来之后，直到贴底、淡入做完。
+                         */
+                        animateItems = !vm.switching && !switchingConversation,
                         onCopy = { message -> copyToClipboard(context, message.content) },
                         onRegenerate = { message ->
                             /*
@@ -1760,6 +1814,15 @@ fun ChatScreen(
                                 vm.pickProfileModel(profileId, modelId)
                             },
                             modelsOfProfile = { vm.modelsOf(it) },
+                        )
+                    },
+                    reasoningLevel = vm.settings.reasoningLevel,
+                    reasoningPanel = {
+                        ReasoningCard(
+                            level = vm.settings.reasoningLevel,
+                            onLevelChange = { picked ->
+                                vm.updateSettings(vm.settings.copy(reasoningLevel = picked))
+                            },
                         )
                     },
                     streaming = vm.isStreaming,

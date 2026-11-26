@@ -175,7 +175,7 @@
     <string name="settings_mcp">MCP 服务</string>
     <string name="settings_mcp_hint">连接外部工具服务（HTTP / stdio）。</string>
     <string name="settings_runtime">运行环境</string>
-    <string name="settings_runtime_hint">Ubuntu 环境：装一次就有 apt、gcc 和 python3，能跑任意脚本。</string>
+    <string name="settings_runtime_hint">内置 shell 工具箱开箱即用，Python 在这里按需安装。</string>
 
     <string name="terminal_title">终端</string>
     <string name="terminal_placeholder">输入命令…</string>
@@ -281,7 +281,7 @@
     <string name="about_libs_math">公式</string>
     <string name="about_libs_diagram">图表</string>
     <string name="about_refs">参考项目</string>
-    <string name="about_ref_zakocoder">本机 Ubuntu（proot）运行环境的实现参考</string>
+    <string name="about_ref_zakocoder">早期本机 Ubuntu（proot）运行环境的实现参考（2.5.0 起改为内置 musl 工具箱）</string>
     <string name="about_ref_operit">MCP 工具接入与 AI 绘图流程的实现参考</string>
     <string name="about_ai_disclaimer">生成内容由模型产出，请自行判断使用。</string>
 
@@ -353,7 +353,6 @@
     <string name="reasoning_low">low</string>
     <string name="reasoning_medium">medium</string>
     <string name="reasoning_xhigh">xhigh</string>
-    <string name="model_panel_thinking_mode">思考模式</string>
     <string name="model_panel_effort">思考程度</string>
     <string name="model_panel_models">模型</string>
     <string name="model_panel_manage">管理配置</string>
@@ -712,7 +711,7 @@
     <string name="workspace_current">当前绑定</string>
     <string name="workspace_kind_internal">内置目录 · 无需任何权限</string>
     <string name="workspace_kind_device">本机目录 · 需要「所有文件访问」</string>
-    <string name="workspace_kind_container">容器内目录 · 以宿主机路径绑定</string>
+    <string name="workspace_kind_container">旧版本绑定的目录 · 按普通本机文件夹使用</string>
     <string name="workspace_hint">Agent 与终端只能看到这个目录里的东西。换绑不会移动文件。</string>
     <string name="workspace_shortcuts">常用位置</string>
     <string name="workspace_browse">浏览</string>
@@ -721,7 +720,7 @@
     <string name="workspace_not_dir">这不是一个目录</string>
     <string name="workspace_no_permission">读不到这个目录 —— 需要在「权限管理」里打开所有文件访问</string>
     <string name="workspace_bind_here">绑定到此目录</string>
-    <string name="workspace_container_hint">容器工作区填 Ubuntu rootfs 里那个目录的宿主机路径，例如 /storage/emulated/0/ubuntu/rootfs/home/user/app。文件读写与命令执行都直接作用在上面。</string>
+    <string name="workspace_container_hint">填一个本机文件夹的完整路径，例如 /storage/emulated/0/Download/proj。文件读写与命令执行都直接作用在上面；存储卡上的目录需要先打开「所有文件访问」。</string>
     <string name="workspace_input_path">手动输入路径</string>
     <string name="workspace_reset">回到内置</string>
     <string name="workspace_open_permissions">去授权</string>
@@ -780,7 +779,7 @@
     <string name="settings_cloud_hint">把工作区放到公网机器上，不占手机存储。</string>
 
     <string name="cloud_title">云端环境</string>
-    <string name="cloud_intro">把工作区放在一台远端机器上，手机只负责发指令。不用装 Ubuntu，不占手机存储；每个对话单独绑定，不同话题不会串。两种接法：HTTP 服务（用下面的部署包）或 SSH 直连一台 Linux（什么都不用装）。</string>
+    <string name="cloud_intro">把工作区放在一台远端机器上，手机只负责发指令。那边是一台完整的 Linux（apt、npm、编译器都有），不占手机存储；每个对话单独绑定，不同话题不会串。两种接法：HTTP 服务（用下面的部署包）或 SSH 直连一台 Linux（什么都不用装）。</string>
     <string name="cloud_add">添加云端环境</string>
     <string name="cloud_edit">修改</string>
     <string name="cloud_delete">删除</string>
@@ -836,7 +835,7 @@
     <string name="workspace_cloud_switch">更换</string>
     <string name="workspace_cloud_unbind">解绑</string>
     <string name="workspace_cloud_bound_hint">这个对话的读写与命令都发生在那台机器上。</string>
-    <string name="workspace_cloud_intro">不想装容器、也不想让 Agent 碰手机存储时用它。绑定后，本对话的文件与命令工具全部转到云端。</string>
+    <string name="workspace_cloud_intro">需要完整 Linux（apt、npm、编译器），或者不想让 Agent 碰手机存储时用它。绑定后，本对话的文件与命令工具全部转到云端。</string>
 
     <!-- ── 顶栏更多菜单 / 工具卡细节（v1.2.2） ──────────────── -->
     <string name="topbar_more">更多</string>
@@ -979,24 +978,13 @@
     <string name="action_confirm">确定</string>
     <string name="model_picker_all_hint">全部（%1$d 个）</string>
 
-    <!-- 运行环境：Ubuntu -->
-    <string name="runtime_ubuntu">Ubuntu 环境</string>
-    <string name="runtime_ubuntu_desc">完整 Linux：真 bash + apt + gcc，能执行任意终端命令。约 30 MB 下载、300 MB 磁盘。</string>
-    <string name="runtime_ubuntu_absent">未安装</string>
-    <string name="runtime_ubuntu_unsupported">不支持</string>
-    <string name="runtime_ubuntu_install">安装</string>
-    <string name="runtime_ubuntu_installing">安装中…</string>
-    <string name="runtime_ubuntu_reinstall">重新安装</string>
-    <string name="runtime_ubuntu_remove">卸载</string>
-    <string name="runtime_ubuntu_remove_hint">会删掉整个 Ubuntu 根文件系统，里面装过的包和写过的文件都会没有。工作区文件不受影响。</string>
+    <!-- 运行环境 -->
     <string name="runtime_python">Python</string>
-    <string name="runtime_python_desc">Ubuntu 里的 CPython：装好之后 AI 就能直接跑脚本，不用每次都改写成 shell 命令。</string>
-    <string name="runtime_python_ready">已就绪</string>
+    <string name="runtime_python_desc">独立的 CPython %1$s（musl 构建）。下载约 28 MB，装好占用约 45 MB。之后 python3 / pip 在终端里直接可用，AI 也能直接跑脚本；pip 可以装纯 Python 包，以及发布了 musllinux 版本的扩展包（numpy、pandas 等）。</string>
     <string name="runtime_python_absent">未安装</string>
     <string name="runtime_python_install">安装 Python</string>
     <string name="runtime_python_installing">安装中…</string>
     <string name="runtime_python_reinstall">重装 Python</string>
-    <string name="runtime_repair">修复环境</string>
     <string name="runtime_working">处理中…</string>
 
     <!-- 文件管理器（双栏） -->
@@ -1146,7 +1134,7 @@
     <string name="mcp_env">环境变量</string>
     <string name="mcp_add_header">+ 添加请求头</string>
     <string name="mcp_add_env">+ 添加环境变量</string>
-    <string name="mcp_stdio_hint">stdio 会在本机起一个进程。Android 上没有 npx / uvx，需要先在内置 Ubuntu 或 Termux 里装好运行时，命令写它的绝对路径。</string>
+    <string name="mcp_stdio_hint">stdio 会在本机起一个进程，用的是内置工具箱的环境。Android 上没有 npx / uvx；Python 写的服务可以先在「运行环境」里装好 Python，命令写 python3 加脚本的绝对路径。</string>
     <string name="mcp_timeout">超时</string>
     <string name="mcp_seconds">秒</string>
     <string name="mcp_test">测试连接</string>
@@ -1190,9 +1178,6 @@
     <string name="screen_pipeline_hint">选定之后，AI 只会拿到这一种方式的工具 —— 它不会（也没有能力）临时切到另一种。截图识别会在每一次观察时把当前画面发给模型，分辨率与坐标换算一并给出；适合 UE / Unity 这类没有布局的场景。</string>
     <string name="tool_run_steps">%1$d 步</string>
     <string name="tool_run_expand">展开这 %1$d 次调用的细节</string>
-    <string name="model_params">模型参数</string>
-    <string name="model_params_on">思考 · %1$s</string>
-    <string name="model_params_off">思考 · 关</string>
     <string name="model_group_other">其他</string>
     <string name="profile_label">配置</string>
     <string name="profile_list_title">模型配置</string>
@@ -1357,8 +1342,44 @@
     <!-- 技能 / 运行环境：此前写死在代码里的几句 -->
     <string name="error_read_failed_short">读取失败</string>
     <string name="error_install_failed_short">安装失败</string>
-    <string name="error_repair_failed_short">修复失败</string>
     <string name="runtime_preparing">准备中…</string>
+    <string name="about_libs_runtime">运行环境</string>
+    <string name="runtime_toolbox">内置工具箱</string>
+    <string name="runtime_toolbox_desc">App 自带的 BusyBox（musl 静态构建）：ash 加两百来个命令，直接跑在手机上，不用下载，也没有容器。终端页和 AI 执行命令用的都是它。</string>
+    <string name="runtime_toolbox_ready">已就绪</string>
+    <string name="runtime_toolbox_unavailable">不可用</string>
+    <string name="runtime_toolbox_check">自检</string>
+    <string name="runtime_toolbox_checking">自检中…</string>
+    <string name="runtime_toolbox_fallback">工具箱在这台设备上没有跑起来，命令暂时由系统自带的 sh 执行，Python 不可用。把下面这段原因反馈给开发者：</string>
+    <string name="runtime_python_remove">卸载</string>
+    <string name="runtime_python_remove_hint">会删掉 Python 解释器和用 pip 装过的所有包。工作区文件不受影响。</string>
+    <string name="runtime_python_needs_toolbox">Python 依赖内置工具箱，工具箱可用之后才能安装。</string>
+    <string name="runtime_legacy">旧版 Ubuntu 环境</string>
+    <string name="runtime_legacy_desc">2.4 及更早版本装的 proot + Ubuntu 已经不再使用，还占着 %1$s。里面如果有要留的文件（比如 /root 下的），先到终端里拷出来，它在：%2$s</string>
+    <string name="runtime_legacy_remove">清理</string>
+    <string name="runtime_legacy_removing">清理中…</string>
+    <string name="runtime_legacy_remove_hint">会删掉整个旧 Ubuntu 根文件系统，包括当时在里面装的包和留在里面的文件。删除后无法恢复。</string>
+    <string name="runtime_legacy_remove_failed">没能删干净，稍后再试一次。</string>
+    <string name="workspace_problem_permission">这个文件夹在存储卡上，但「所有文件访问」现在没有打开，AI 读写不了它。</string>
+    <string name="workspace_problem_missing">这个文件夹现在访问不到：可能被删除、改名或移走了。重新选一个，或把它放回原处。</string>
+    <string name="workspace_problem_unreadable">没有读取这个文件夹的权限。换一个文件夹，或检查它的访问权限。</string>
+    <string name="workspace_problem_fix">去打开权限</string>
+    <string name="reasoning_title">思考强度</string>
+    <string name="reasoning_chip_desc">思考强度：%1$s</string>
+    <string name="reasoning_desc_off">不思考，直接回答。最快，适合闲聊和简单的问题。</string>
+    <string name="reasoning_desc_low">稍微想一下再答。快，适合日常问答。</string>
+    <string name="reasoning_desc_medium">速度和深度各让一步，大多数时候用这一档。</string>
+    <string name="reasoning_desc_high">想得更细，适合代码、推导和要分几步的问题。</string>
+    <string name="reasoning_desc_xhigh">深入推理。明显更慢，也更费额度。</string>
+    <string name="reasoning_desc_max">尽全力去想。最慢、最费额度，留给最难的问题。</string>
+    <string name="reasoning_note">有的模型不支持调节，会忽略这个设置。</string>
+    <string name="model_panel_thinking_mode">思考模式</string>
+    <string name="settings_home_icon">首页图标</string>
+    <string name="home_icon_default">默认</string>
+    <string name="home_icon_custom">自定义</string>
+    <string name="home_icon_change">更换图标</string>
+    <string name="home_icon_pick">从相册选择</string>
+    <string name="home_icon_reset">恢复默认图标</string>
 </resources>
 
 

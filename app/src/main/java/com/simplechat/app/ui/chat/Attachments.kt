@@ -1,5 +1,7 @@
 package com.simplechat.app.ui.chat
 
+import com.simplechat.app.ui.common.bounceClick
+import com.simplechat.app.ui.common.BounceScale
 import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.Image
@@ -265,10 +267,13 @@ private fun ImageThumb(spec: Attachment, size: Dp, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(size)
-            .clip(SoftShape)
-            .background(surface.background)
-            .border(1.dp, surface.border, SoftShape)
-            .clickable(onClick = onClick),
+            .bounceClick(
+                shape = SoftShape,
+                background = surface.background,
+                pressedScale = BounceScale.Tile,
+                onClick = onClick,
+            )
+            .border(1.dp, surface.border, SoftShape),
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) {
@@ -301,12 +306,10 @@ private fun FileChip(spec: Attachment, onClick: () -> Unit) {
         modifier = Modifier
             .heightIn(min = ThumbSize)
             .widthIn(max = 220.dp)
-            .clip(SoftShape)
-            .background(surface.background)
-            .border(1.dp, surface.border, SoftShape)
-            .clickable {
+            .bounceClick(shape = SoftShape, background = surface.background) {
                 if (binary) openAttachment(context, spec) else onClick()
             }
+            .border(1.dp, surface.border, SoftShape)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -638,9 +641,12 @@ private fun AttachmentTile(
     val colors = LocalChatColors.current
     Column(
         modifier = modifier
-            .clip(SoftShape)
-            .background(colors.fieldBackground)
-            .clickable(onClick = onClick)
+            .bounceClick(
+                shape = SoftShape,
+                background = colors.fieldBackground,
+                pressedScale = BounceScale.Tile,
+                onClick = onClick,
+            )
             .padding(vertical = 14.dp, horizontal = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),

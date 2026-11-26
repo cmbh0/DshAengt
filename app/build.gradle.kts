@@ -24,6 +24,16 @@ val keystoreProperties = Properties().apply {
 }
 val hasReleaseSigning = keystorePropertiesFile.exists()
 
+// 发行构建（CI）设 DSHA_REQUIRE_RELEASE_SIGNING=1：缺签名配置就直接失败，
+// 绝不回落到 debug 签名 —— 免得「构建成功」的产物其实不是发行证书签的。
+val requireReleaseSigning = System.getenv("DSHA_REQUIRE_RELEASE_SIGNING") == "1"
+if (requireReleaseSigning && !hasReleaseSigning) {
+    throw GradleException(
+        "DSHA_REQUIRE_RELEASE_SIGNING=1 但根目录没有 keystore.properties，" +
+            "拒绝回落到 debug 签名。",
+    )
+}
+
 android {
     namespace = "com.simplechat.app"
     compileSdk = 37
@@ -33,8 +43,8 @@ android {
         applicationId = "com.simplechat.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 83
-        versionName = "2.4.1"
+        versionCode = 84
+        versionName = "2.5.0"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -50,21 +60,23 @@ android {
     }
 
     /**
-     * proot 以 `jniLibs/<abi>/libproot*.so` 的形式随 APK 分发。
+     * 本机运行环境以 `jniLibs/<abi>/lib*.so` 的形式随 APK 分发：
      *
+     * - `libbusybox.so`：静态链接的 BusyBox（shell 加两百来个命令）；
+     * - `libmusl.so`：musl 的动态加载器兼 libc，用来启动按需下载的 CPython；
+     * - `libdshaexec.so`：`python3` / `pip` 的入口。
+     *
+     * 它们是可执行文件，不是动态库，只是借这个名字落到 `nativeLibraryDir`。
      * 这是 Android 10 起 W^X 限制下的唯一可行路径：应用**不能**执行自己私有目录
      * 里的文件（`execve` 直接 EACCES），但 `nativeLibraryDir` 里的东西是可以的。
      * 代价是必须 `extractNativeLibs=true` 且对 jniLibs 用 legacy 打包 ——
      * 默认的"不落地、直接从 APK 映射"模式下，这些文件根本不会出现在磁盘上。
      *
-     * 里面是**两套**成对的 proot + loader：
-     * - `libproot5.so` / `libproot5loader.so`：Android 原生（bionic PIE）构建，
-     *   首选。与系统库同源，最不容易被内核 / SELinux 挑刺。
-     * - `libproot.so` / `libprootloader.so`：上游静态构建，后备。
-     * loader 必须与 proot 同版本配对，混用会得到"退出码 255、一个字都不打印"。
+     * 源码版本、补丁与构建脚本都在 `tools/musl/`，`tools/musl/SHA256SUMS` 记着
+     * 仓库里这几份产物的校验值。
      *
-     * `keepDebugSymbols` 是给打包工具看的：它们不是 ARM 平台库，让 AGP 去 strip
-     * 只会得到一个损坏的 ELF（本地已经手工 strip 过）。
+     * `keepDebugSymbols` 是给打包工具看的：它们已经 strip 过，而且是 musl 的静态
+     * 可执行文件，让 AGP 再拿 NDK 的 strip 过一遍没有收益，只有弄坏的风险。
      */
     buildTypes {
         debug {
@@ -106,13 +118,12 @@ android {
             )
         }
         jniLibs {
-            // 见上面那段说明：proot 必须落盘到 nativeLibraryDir 才可执行
+            // 见上面那段说明：这几个文件必须落盘到 nativeLibraryDir 才可执行
             useLegacyPackaging = true
             keepDebugSymbols += setOf(
-                "**/libproot.so",
-                "**/libprootloader.so",
-                "**/libproot5.so",
-                "**/libproot5loader.so",
+                "**/libbusybox.so",
+                "**/libmusl.so",
+                "**/libdshaexec.so",
             )
         }
     }
@@ -158,8 +169,8 @@ dependencies {
 
     implementation(libs.okhttp)
     implementation(libs.jsch)
-    // 解开 Ubuntu rootfs（tar.gz）。自己写 tar 解析要处理 GNU/PAX 长名、符号链接、
-    // 稀疏文件，出错就是"装到一半的文件系统"，不值得省这 600 KB。
+    // 解开 Python 发行包（tar.gz）。自己写 tar 解析要处理 GNU/PAX 长名、符号链接、
+    // 稀疏文件，出错就是"装到一半的解释器"，不值得省这 600 KB。
     implementation("org.apache.commons:commons-compress:1.26.2")
     implementation(libs.kotlinx.serialization.json)
 

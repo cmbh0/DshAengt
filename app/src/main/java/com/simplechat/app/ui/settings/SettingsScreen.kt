@@ -10,6 +10,9 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import com.simplechat.app.ui.common.bounceHost
+import com.simplechat.app.ui.common.relayClick
+import com.simplechat.app.ui.common.bounceClick
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -1281,6 +1284,8 @@ private fun RootPage(
     var themeMenuOpen by remember { mutableStateOf(false) }
     var accentMenuOpen by remember { mutableStateOf(false) }
     var languageMenuOpen by remember { mutableStateOf(false) }
+    var homeIconMenuOpen by remember { mutableStateOf(false) }
+    val homeIconActions = com.simplechat.app.ui.common.rememberHomeIconActions()
 
     val screenChannel by com.simplechat.app.agent.ScreenAutomation.state.collectAsState()
     val scheduleCount by com.simplechat.app.data.ScheduleStore.items.collectAsState()
@@ -1416,6 +1421,41 @@ private fun RootPage(
                             },
                         )
                     }
+                }
+            }
+        }
+
+        // 首页图标：空白会话页正中那一枚。在首页直接点图标也能换，这里是找得到的那个入口
+        Box {
+            SettingsNavRow(
+                icon = AppIcons.Image,
+                label = stringResource(R.string.settings_home_icon),
+                value = stringResource(
+                    if (stored.homeIcon.isBlank()) R.string.home_icon_default else R.string.home_icon_custom,
+                ),
+                onClick = { homeIconMenuOpen = true },
+            )
+            AppMenu(
+                expanded = homeIconMenuOpen,
+                onDismissRequest = { homeIconMenuOpen = false },
+            ) {
+                AppMenuItem(
+                    label = stringResource(R.string.home_icon_pick),
+                    icon = AppIcons.Image,
+                    onClick = {
+                        homeIconMenuOpen = false
+                        homeIconActions.pick()
+                    },
+                )
+                if (stored.homeIcon.isNotBlank()) {
+                    AppMenuItem(
+                        label = stringResource(R.string.home_icon_reset),
+                        icon = AppIcons.RotateCcw,
+                        onClick = {
+                            homeIconMenuOpen = false
+                            homeIconActions.reset()
+                        },
+                    )
                 }
             }
         }
@@ -1780,7 +1820,7 @@ private fun VoicePage(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { customOpen = !customOpen }
+                .relayClick { customOpen = !customOpen }
                 .padding(horizontal = 16.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -2517,7 +2557,7 @@ private fun ApiProfileHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .relayClick(onClick = onClick)
             .padding(start = RowPadH, end = RowPadH, top = 16.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2731,7 +2771,7 @@ private fun PresetRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onEdit)
+            .relayClick(onClick = onEdit)
             .padding(start = 12.dp, end = 8.dp, top = 11.dp, bottom = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -3805,6 +3845,11 @@ private fun AboutPage(onReplayOnboarding: () -> Unit) {
         InfoRow(label = stringResource(R.string.about_libs_diagram), value = "Mermaid (MIT)")
         InfoRow(label = "DeepSeek Chat Demo", value = "MIT")
         InfoRow(label = "Simple-Agent", value = "MIT")
+        // 随 APK 分发的二进制：源码、补丁与构建脚本在仓库的 tools/musl/ 下
+        InfoRow(
+            label = stringResource(R.string.about_libs_runtime),
+            value = "BusyBox (GPL-2.0) · musl (MIT) · CPython (PSF-2.0)",
+        )
     }
 
     Spacer(Modifier.size(16.dp))
@@ -3812,7 +3857,7 @@ private fun AboutPage(onReplayOnboarding: () -> Unit) {
     /*
      * 参考项目。
      *
-     * 这一块不是为了"好看"：Ubuntu 终端环境、proot 的启动参数、截图识别管线
+     * 这一块不是为了"好看"：早期的本机 Ubuntu（proot）环境、截图识别管线
      * 这几处都是从这两个项目里学来的（见各自那几段注释）。把出处写在
      * 用户能找到的地方，既是致谢，也让后来的人知道该去哪儿看实现。
      */
@@ -3894,7 +3939,7 @@ private fun RefProjectRow(
             .fillMaxWidth()
             .then(
                 if (url != null) {
-                    Modifier.clickable {
+                    Modifier.relayClick {
                         runCatching {
                             context.startActivity(
                                 android.content.Intent(
@@ -3960,9 +4005,7 @@ private fun AuthorCard() {
         modifier = Modifier
             .fillMaxWidth()
             // 圆角、左右内边距与别的卡片一致：这张卡只是内容特别，不是另一种容器
-            .clip(RoundedCornerShape(CardCorner))
-            .background(colors.card)
-            .clickable {
+            .bounceClick(RoundedCornerShape(CardCorner), background = colors.card) {
                 runCatching {
                     context.startActivity(
                         android.content.Intent(
@@ -4124,12 +4167,18 @@ fun SettingsSectionLabel(text: String) {
     )
 }
 
+/**
+ * 分组卡片：一张圆角卡里放几行。
+ *
+ * 点里面任意一行，**整张卡**按下去再弹回来（见 `Bounce.kt`）。
+ */
 @Composable
 fun SettingsCard(content: @Composable () -> Unit) {
     val colors = LocalChatColors.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .bounceHost()
             .clip(RoundedCornerShape(CardCorner))
             .background(colors.card),
     ) {
@@ -4360,7 +4409,7 @@ private fun LinkRow(label: String, value: String, url: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable {
+            .relayClick {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                 // 没有浏览器时不要崩：提示一句就够了
                 runCatching { context.startActivity(intent) }

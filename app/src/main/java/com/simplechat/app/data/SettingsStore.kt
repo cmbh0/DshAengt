@@ -359,6 +359,11 @@ data class StoredSettings(
     val userPersona: String = "",
     /** 本地头像（content:// 或 file://）。空 = 用名字首字画一个圆。 */
     val userAvatar: String = "",
+    /**
+     * 首页（空会话页）正中那枚图标的自定义图片：私有目录里一份副本的绝对路径。
+     * 空 = 用应用自带的图标。文件由 [HomeIcon] 负责写入与清理。
+     */
+    val homeIcon: String = "",
     /** 外观：SYSTEM / LIGHT / DARK。 */
     val themeModeId: String = "SYSTEM",
     /** 主题色：AccentColor.name，见 ui/theme/Theme.kt。 */
@@ -615,6 +620,7 @@ class SettingsStore(private val context: Context) {
             terminalSandboxed = prefs[Keys.TERMINAL_SANDBOX] ?: StoredSettings().terminalSandboxed,
             userName = prefs[Keys.PROFILE_NAME] ?: StoredSettings().userName,
             userAvatar = prefs[Keys.PROFILE_AVATAR] ?: StoredSettings().userAvatar,
+            homeIcon = prefs[Keys.HOME_ICON] ?: StoredSettings().homeIcon,
             themeModeId = prefs[Keys.THEME_MODE] ?: StoredSettings().themeModeId,
             accentColorId = prefs[Keys.ACCENT_COLOR] ?: StoredSettings().accentColorId,
             fontScale = prefs[Keys.FONT_SCALE] ?: StoredSettings().fontScale,
@@ -1027,6 +1033,13 @@ class SettingsStore(private val context: Context) {
         context.settingsDataStore.edit { it[Keys.PROFILE_AVATAR] = avatar }
     }
 
+    /** 首页图标：传 [HomeIcon.import] 返回的路径；空串 = 恢复默认。 */
+    suspend fun setHomeIcon(path: String) {
+        context.settingsDataStore.edit { prefs ->
+            if (path.isBlank()) prefs.remove(Keys.HOME_ICON) else prefs[Keys.HOME_ICON] = path
+        }
+    }
+
     suspend fun setOnboardingDone() {
         context.settingsDataStore.edit { it[Keys.ONBOARDING_DONE] = true }
     }
@@ -1290,6 +1303,7 @@ class SettingsStore(private val context: Context) {
         val TERMINAL_SANDBOX = booleanPreferencesKey("terminal_sandbox")
         val PROFILE_NAME = stringPreferencesKey("profile_name")
         val PROFILE_AVATAR = stringPreferencesKey("profile_avatar")
+        val HOME_ICON = stringPreferencesKey("home_icon")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val ACCENT_COLOR = stringPreferencesKey("accent_color")
         val FONT_SCALE = floatPreferencesKey("font_scale")

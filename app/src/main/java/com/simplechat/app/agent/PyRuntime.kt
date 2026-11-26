@@ -5,15 +5,15 @@ import java.io.File
 /**
  * Python 运行时。
  *
- * 两条路，优先嵌入式：
+ * 三条路，按优先级：
  *
- * 1. **Chaquopy**（若构建时接入了）：进程内 CPython，启动快、不用装 APK 外的
- *    任何东西。这里**全部用反射**调用 —— 反射的好处是即使构建里没有 Chaquopy，
- *    这个文件也能正常编译，功能自动降级，而不是让整个工程编不过。
- * 2. **系统 python3**：部分 ROM / 用户自己装过 Termux 时存在。走 `sh -c` 调起，
- *    输出重定向到文件再读回。
+ * 1. **Chaquopy**（若构建时接入了）：进程内 CPython。这里**全部用反射**调用 ——
+ *    即使构建里没有 Chaquopy，这个文件也能正常编译，功能自动降级。
+ * 2. **内置环境里的 CPython**（[MuslPython]）：在「设置 → 运行环境」里装一次，
+ *    之后 `python3` / `pip` 在 shell 里直接可用。这是正路。
+ * 3. **系统 python3**：个别 ROM 自带。
  *
- * 两条都不通时，`python` 工具返回一句人话，让模型改用 `run_shell` ——
+ * 三条都不通时，`python` 工具返回一句人话，告诉模型该让用户去装 ——
  * 而不是抛异常把整轮对话打断。
  */
 object PyRuntime {
@@ -23,17 +23,13 @@ object PyRuntime {
         EMBEDDED,
 
         /**
-         * 本机 Ubuntu 环境里的 python3。
+         * 内置环境里的 CPython（[MuslPython]）。
          *
-         * 这是**正路**：Ubuntu 装好之后 `apt install python3 python3-pip`，
-         * 得到的是一个完整的 CPython + 全部标准库 —— 而不是让用户自己去
-         * 找 Termux 或往手机里塞一个 python 二进制。
-         *
-         * 为什么不直接用 `linux_shell` 让模型自己敲：模型每次都要写
-         * `python3 - <<'EOF' … EOF`，引号与 heredoc 一错就是"命令没输出"，
-         * 它再猜两轮。一个结构化工具把这段噪音全省掉。
+         * 为什么不直接让模型在 `run_shell` 里敲：它每次都要写
+         * `python3 - <<'EOF' … EOF`，引号与 heredoc 一错就是「命令没输出」，
+         * 再猜两轮。一个结构化工具把这段噪音全省掉。
          */
-        UBUNTU,
+        MUSL,
 
         /** 系统里有 python3 可执行文件（部分 ROM / Termux）。 */
         SYSTEM,
@@ -49,7 +45,7 @@ object PyRuntime {
         cachedKind?.let { return it }
         val detected = when {
             embedded() != null -> Kind.EMBEDDED
-            ubuntuPython() != null -> Kind.UBUNTU
+            MuslPython.isInstalled() && MuslEnv.health().ok -> Kind.MUSL
             systemPython() != null -> Kind.SYSTEM
             else -> Kind.NONE
         }
@@ -59,9 +55,14 @@ object PyRuntime {
 
     fun isAvailable(): Boolean = kind() != Kind.NONE
 
+    /** 装了或卸了解释器之后调一次：下次 [kind] 重新探测。 */
+    fun invalidate() {
+        cachedKind = null
+    }
+
     fun displayName(): String = when (kind()) {
         Kind.EMBEDDED -> "内置 Python"
-        Kind.UBUNTU -> "Ubuntu Python"
+        Kind.MUSL -> "Python ${MuslPython.installedVersion().orEmpty()}".trim()
         Kind.SYSTEM -> "系统 Python"
         Kind.NONE -> "未安装"
     }
@@ -71,13 +72,7 @@ object PyRuntime {
         Kind.EMBEDDED -> runCatching {
             (embedded()?.let { callModule(it, "__main__") }?.let { readGlobal(it, "_v") } ?: "").trim()
         }.getOrDefault("")
-        Kind.UBUNTU -> runCatching {
-            kotlinx.coroutines.runBlocking {
-                UbuntuEnv.run("python3 -V", timeoutSeconds = 30).let { result ->
-                    (result.stdout + result.stderr).trim()
-                }
-            }
-        }.getOrDefault("")
+        Kind.MUSL -> MuslPython.installedVersion()?.let { "Python $it" }.orEmpty()
         Kind.SYSTEM -> runCatching {
             val out = ProcessBuilder(systemPython()!!, "--version").redirectErrorStream(true).start()
             out.inputStream.bufferedReader().readText().trim()
@@ -95,10 +90,11 @@ object PyRuntime {
         if (code.isBlank()) return ToolOutcome.fail("代码为空")
         return when (kind()) {
             Kind.EMBEDDED -> runEmbedded(code)
-            Kind.UBUNTU -> runUbuntu(code, cwd)
+            Kind.MUSL -> runMusl(code, cwd)
             Kind.SYSTEM -> runSystem(code, cwd)
             Kind.NONE -> ToolOutcome.fail(
-                "当前没有可用的 Python 运行时。可以改用 linux_shell，或在设置 → 运行环境里装好 Ubuntu —— python3 随 Ubuntu 一起装好。",
+                "这台手机上还没有装 Python。请让用户到「设置 → 运行环境」点一次「安装 Python」" +
+                    "（下载约 28 MB）；装好之前可以先用 run_shell 里的 awk / sed / bc 之类处理。",
             )
         }
     }
@@ -173,37 +169,40 @@ object PyRuntime {
         obj?.toString()
     }.getOrNull()
 
-    // ── Ubuntu ────────────────────────────────────────────────
+    // ── 内置环境 ──────────────────────────────────────────────
 
     /**
-     * 在 Ubuntu 里跑一段代码。
+     * 用内置环境里的 CPython 跑一段代码。
      *
-     * 落地成 `/workspace/.dsha/tmp_xxx.py` 再执行，而不是 `python3 -c "..."`：
-     * 代码里的引号、换行、中文都不需要转义，出错时行号也是对的。
-     * 工作区在 Ubuntu 里映射为 `/workspace`，所以宿主路径要换算一下。
+     * 代码落成临时文件再执行，而不是 `python3 -c "..."`：引号、换行、中文都不需要
+     * 转义，出错时行号也是对的。临时文件放在 App 自己的缓存目录 —— 不往工作区里
+     * 丢 `.dsha/tmp_*.py`，那是用户的目录（绑的是共享存储时还会被别的 App 看见）。
      */
-    private suspend fun runUbuntu(code: String, cwd: File): ToolOutcome {
-        val root = Workspace.rootOrNull()
-            ?: return ToolOutcome.fail("工作区还没绑定，Python 脚本无处落地")
-        val relative = runCatching {
-            cwd.canonicalFile.toRelativeString(root.canonicalFile).replace('\\', '/').trim('/')
-        }.getOrDefault("")
-        val dir = File(root, ".dsha").apply { mkdirs() }
-        val script = File(dir, "tmp_${System.nanoTime()}.py")
+    private suspend fun runMusl(code: String, cwd: File): ToolOutcome {
+        val script = File(MuslEnv.tmpDir().apply { mkdirs() }, "py_${System.nanoTime()}.py")
         return runCatching {
             script.writeText(code)
-            val guestDir = if (relative.isEmpty()) "/workspace" else "/workspace/$relative"
-            val result = UbuntuEnv.run(
-                command = "python3 /workspace/.dsha/${script.name}",
-                cwd = guestDir,
+            val result = Shell.run(
+                command = "python3 '${script.absolutePath}'",
+                cwd = cwd,
                 timeoutSeconds = 120,
             )
-            if (result.exitCode == 0) {
-                ToolOutcome.ok(result.stdout.ifBlank { "（无输出）" })
+            if (result.exitCode == 0 && !result.timedOut) {
+                ToolOutcome.ok(
+                    buildString {
+                        append(result.stdout.ifBlank { "（无输出）" })
+                        // 警告类的 stderr 不算失败，但模型应该看得见
+                        if (result.stderr.isNotBlank()) append("\n--- stderr ---\n").append(result.stderr.trimEnd())
+                        if (result.truncated) append("\n（输出过长，已截断）")
+                    },
+                )
             } else {
                 ToolOutcome.fail(
                     buildString {
-                        append("exit=").append(result.exitCode).append('\n')
+                        append("exit=").append(result.exitCode)
+                        if (result.timedOut) append("（超时 120 秒被终止）")
+                        Shell.signalHint(result.exitCode)?.let { append("（").append(it).append("）") }
+                        append('\n')
                         if (result.stdout.isNotBlank()) append(result.stdout).append('\n')
                         if (result.stderr.isNotBlank()) append(result.stderr)
                     }.trim(),
@@ -211,60 +210,6 @@ object PyRuntime {
             }
         }.getOrElse { ToolOutcome.fail("Python 执行失败：${it.message}") }
             .also { script.delete() }
-    }
-
-    /** Ubuntu 根文件系统里是否已经有 python3。比跑一次 proot 便宜得多。 */
-    private fun ubuntuPython(): String? {
-        // 文件在但环境跑不起来（没测出档位）时不算 —— 否则模型会去用一个必然失败的解释器
-        if (!UbuntuEnv.isReady()) return null
-        /*
-         * 不只认 `/usr/bin/python3`。
-         *
-         * apt 装出来的是 `/usr/bin/python3`，但也有环境把它放在
-         * `/usr/local/bin/python3`（源码编译装的），或者只留了
-         * `/usr/bin/python3.10` 这种带版本号的名字。少认一条路径，
-         * 表现就是"明明装好了，App 却说没有 Python"。
-         */
-        val root = UbuntuEnv.rootfs()
-        val candidates = listOf(
-            "usr/bin/python3",
-            "usr/local/bin/python3",
-            "usr/bin/python3.10",
-            "usr/bin/python3.11",
-            "usr/bin/python3.12",
-        )
-        return candidates
-            .map { File(root, it) }
-            .firstOrNull { it.isFile }
-            ?.absolutePath
-    }
-
-    /**
-     * 在 Ubuntu 里装解释器本身。
-     *
-     * 这一步就是"装好 Ubuntu 之后点一下安装 Python"：走 apt，清华源已经在
-     * [UbuntuEnv.install] 里配好了。装完 `kind()` 会自己变成 UBUNTU。
-     *
-     * 实现收到 [PythonInstaller] 去了 —— 那边才是**唯一**一份"怎么装"的代码。
-     *
-     * 旧版这里的问题很具体：
-     *
-     * - `apt-get update` 的**结果被丢掉了**，更新失败也照样往下装，
-     *   于是报的是 `Unable to locate package python3`（真正的原因在更新那一步）；
-     * - 没有 `dpkg --configure -a`，上一次装到一半被打断之后，
-     *   **每一次** apt 命令都会先死在 dpkg 上；
-     * - 失败被 `runCatching { }` 吞掉，安装界面照样显示"完成"，
-     *   而用户到终端里敲 `python3` 才发现根本没有。
-     *
-     * 现在失败会把原因带回来，界面可以显示出来。
-     */
-    suspend fun installInterpreter(onLine: (String) -> Unit): Boolean {
-        val result = PythonInstaller.install(onLine)
-        cachedKind = null
-        result.onFailure { error ->
-            onLine(error.message ?: "安装 Python 失败")
-        }
-        return result.isSuccess
     }
 
     // ── 系统 ──────────────────────────────────────────────────
@@ -308,13 +253,4 @@ object PyRuntime {
             path.takeIf { it.startsWith("/") && File(it).canExecute() }
         }.getOrNull()
     }
-
-    /*
-     * 这里原来还有"运行期补装包"与 `CommonPackages`（requests / bs4 / lxml …）。
-     *
-     * 现在界面只装 Ubuntu：要什么库，模型在 Ubuntu 里 `apt install` /
-     * `pip install` 就行。App 侧再维护一份"常用包"清单，等于给用户两个
-     * 互相打架的包管理入口 —— 且它绕过 apt，装出来的 wheel 和系统包管理器
-     * 记录不一致，出问题更难查。
-     */
 }
