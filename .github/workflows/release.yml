@@ -117,45 +117,42 @@ jobs:
       - name: 生成发行说明
         run: |
           set -euo pipefail
-          cat > notes.md <<'EOF'
+          version="${{ steps.apk.outputs.version }}"
+
+          # 从 CHANGELOG 抽本版段落（`## x.y.z` 到下一个 `## ` 之前）。
+          # 抽不到就直接失败：发行说明写着上一版的内容，比什么都不写更糟 --
+          # 用户会照着"新增 X 功能"去找一个并不存在的按钮。
+          awk -v ver="## $version" '
+            $0 == ver { show = 1; next }
+            show && /^## / { exit }
+            show { print }
+          ' CHANGELOG.md > changes.md
+
+          if [ ! -s changes.md ]; then
+            echo "::error::CHANGELOG.md 里没有 $version 的段落，补齐再发"
+            exit 1
+          fi
+
+          {
+            cat <<'HEADER'
           ## 安装
 
-          - **签名证书已更换**（旧证书 SHA-256 `274c45c9826650a87368e449fe51732a9ff823ccd76e2665b2741ecf34a53712` 作废）。
-            装着 2.4.1 及更早版本的设备**不能覆盖安装**：请先在 设置 → 备份 导出备份（或 ZIP 归档），
-            卸载旧版后再安装本版，装回后导入备份。直接覆盖安装会被系统以签名不一致拒绝。
           - 下载 `${{ steps.apk.outputs.file }}` 安装（Android 8.0+，arm64 / x86_64）。
+          - **签名证书在 2.5.0 更换过**（旧证书 SHA-256 `274c45c9826650a87368e449fe51732a9ff823ccd76e2665b2741ecf34a53712` 已作废）。
+            仍装着 2.4.1 及更早版本的设备**不能覆盖安装**：先在 设置 → 备份 导出备份（或 ZIP 归档），
+            卸载旧版后再装本版，装回后导入备份。从 2.5.0 起一路升上来的直接覆盖即可。
 
           ## 这个版本改了什么
 
-          **运行环境整体更换（musl + BusyBox + 按需下载的 CPython）**
-
-          - proot 与 Ubuntu rootfs 全部移除：随包改为静态 musl 1.2.5 动态加载器 + BusyBox 1.37.0
-            （ash 与两百来个命令），直接在 Android 上原生执行
-          - Python 改为按需下载 musl 版 CPython 3.12（python-build-standalone），经随包 musl 启动；
-            pip 可装纯 Python 包，musllinux wheel（numpy、pandas 等）验证可装
-          - **apt 不再提供，npm 不再提供**；旧版安装过的 Ubuntu 环境可在「运行环境」页一键清理
-          - AI 工具改名：`linux_shell` → `run_shell`，新增 `python`；`install_packages` 只走 pip
-
-          **界面**
-
-          - 全局按压回弹动效（按钮、卡片、列表行按下即缩放回弹）
-          - 思考强度档位：输入栏新增 chip，滑杆五档（关/低/中/高/极高），拖动预览、松手生效
-          - 首页图标可自定义：点空态图标换图（自动方裁、EXIF 转正）或恢复默认
-          - 对话页任意位置右滑拉开历史抽屉，跟手速度决定吸附，打开时收起键盘
-          - 修键盘开着时切换/打开话题出现内容重影
-
-          **工具与工作区**
-
-          - `write_file` / `edit_file` / `patch_file` 严格校验：缺参报错、歧义报错、写后回读
-          - 思考完成前发出的工具调用整批作废并要求重发
-          - 工作区路径解析修复：认工作区内绝对路径，`..` 逃逸一律拒绝
+          HEADER
+            cat changes.md
+            cat <<'FOOTER'
 
           ## 已知问题
 
-          - **本轮改动均在主机与模拟环境（qemu）测试，尚未在真机验证** ——
-            新 UI 手势、运行环境、Python 下载安装请以实际体验为准，问题请开 Issue
-          - 不再提供 apt / npm；需要装包只能走 pip（纯 Python 包与 musllinux wheel）
-          - 旧 Ubuntu 环境与新版不兼容，升级后请在「运行环境」页清理
+          - 本轮改动主要在主机与模拟环境验证，**新 UI 手势、运行环境、Python 下载安装**
+            请以真机体验为准，问题请开 Issue
+          - 不提供 apt / npm；需要装包只能走 pip（纯 Python 包与 musllinux wheel）
 
           ## 校验
 
@@ -163,8 +160,11 @@ jobs:
           - 大小：`${{ steps.apk.outputs.size }}` 字节
           - SHA-256：`${{ steps.apk.outputs.sha256 }}`
           - 签名证书 SHA-256：`${{ steps.apk.outputs.cert }}`
-            （本版起的新发行证书；旧版证书 `274c45c9…3712` 已作废，两版不能覆盖安装）
-          EOF
+          FOOTER
+          } > notes.md
+
+          echo "--- notes.md ---"
+          cat notes.md
 
       - name: 创建 GitHub Release
         env:
