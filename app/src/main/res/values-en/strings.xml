@@ -158,6 +158,7 @@
     <string name="tool_write_file">Write file</string>
     <string name="tool_edit_file">Edit file</string>
     <string name="tool_list_dir">List directory</string>
+    <string name="tool_file_ops">File operations</string>
     <string name="tool_run_shell">Run command</string>
     <string name="tool_python">Run Python</string>
     <string name="tool_web_fetch">Fetch page</string>
@@ -188,6 +189,26 @@
     <string name="skills_delete">Delete</string>
     <string name="skills_enabled_count">%1$d enabled</string>
     <string name="skills_installed">%1$d skills installed</string>
+
+    <string name="market_title">Plugin market</string>
+    <string name="market_loading">Loading…</string>
+    <string name="market_loading_body">Fetching the index</string>
+    <string name="market_offline">Offline</string>
+    <string name="market_refresh">Refresh</string>
+    <string name="market_source">Index URL</string>
+    <string name="market_change_source">Change</string>
+    <string name="market_source_hint">An https URL pointing to an index.json. Leave empty for the default source.</string>
+    <string name="market_empty_title">No plugins here yet</string>
+    <string name="market_empty_body">Check your network and refresh, or switch to another index URL.</string>
+    <string name="market_install">Install</string>
+    <string name="market_installing">Installing</string>
+    <string name="market_installed">Installed</string>
+    <string name="market_unsupported">Manual setup</string>
+    <string name="market_install_done">Installed %1$s</string>
+    <string name="market_install_failed">Install failed: %1$s</string>
+    <string name="market_install_failed_short">unknown error</string>
+    <string name="market_load_failed_short">fetch failed</string>
+    <string name="market_footer">A plugin is just a skill package (SKILL.md, optional scripts). Enable or remove it on the Skills page. The index is plain JSON — anyone can host one and you can point the app at it.</string>
 
     <string name="mcp_title">MCP servers</string>
     <string name="mcp_empty">Nothing configured. MCP lets the model call external tools — search, databases, internal services.</string>
@@ -1175,6 +1196,7 @@
     <string name="screen_pipeline_vision_hint">Looks at a screenshot and taps coordinates. For games and canvas UIs that expose no controls. Screenshots stay in memory.</string>
     <string name="screen_pipeline_hint">Once picked, the AI only gets the tools for that mode — it cannot switch to the other one on its own. Screenshot mode sends the current frame with every observation, along with resolution and scale, for UE/Unity style scenes.</string>
     <string name="tool_run_steps">%1$d steps</string>
+    <string name="tool_run_parallel">%1$d in parallel</string>
     <string name="tool_run_expand">Expand details of these %1$d calls</string>
     <string name="model_group_other">Others</string>
     <string name="profile_label">Profile</string>

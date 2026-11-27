@@ -178,6 +178,26 @@ fun ToolCallCard(
                     modifier = Modifier.weight(1f, fill = false),
                 )
             }
+            /*
+             * 失败原因直接写在折叠行上。
+             *
+             * 早先失败只有一个红点，用户想知道"为什么"必须点开卡片、再在几百行输出里
+             * 找第一句报错。而失败的第一行通常就是答案（"文件不存在" / "没有 root"）——
+             * 把它放在行上，扫一眼就知道该不该重试、要不要换个说法。
+             *
+             * 与摘要抢空间时**让摘要先被压**：摘要是"动的是哪个文件"，失败原因是
+             * "为什么没成"，后者才是用户此刻要的。所以这一条不加 weight。
+             */
+            if (call.status == ToolCallUi.Status.FAILED && call.output.isNotBlank()) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = call.output.lineSequence().first().trim().take(46),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.danger,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Spacer(Modifier.weight(1f))
             if (htmlPath != null) {
                 IconCircleButton(
@@ -438,6 +458,9 @@ private fun iconFor(name: String) = when {
     name == "generate_image" -> AppIcons.Image
     name == "web_fetch" -> AppIcons.Globe
     name == "list_dir" -> AppIcons.Database
+    // 建目录 / 改名 / 复制 / 删除：用文件夹而不是文件图标 —— 这一步动的是"位置"，
+    // 不是内容
+    name == "file_ops" -> AppIcons.Folder
     name.startsWith("mcp__") -> AppIcons.Server
     else -> AppIcons.FileText
 }
@@ -815,7 +838,22 @@ fun ToolRunStrip(
                 }
             }
             Spacer(Modifier.weight(1f))
-            if (calls.size > 1) {
+            /*
+             * 并行的那几条要说出来。
+             *
+             * 折叠态只显示"当前这一条"，可模型一次发三个 read_file 时，屏幕上
+             * 确实有三件事同时在跑 —— 只报一个会让人以为其余两个没被执行，
+             * 或者怀疑"刚刚明明看到三个文件被读"。`3 项并行` 是这一行能给的最短提示。
+             */
+            val running = calls.count { it.status == ToolCallUi.Status.RUNNING }
+            if (running > 1) {
+                Text(
+                    text = Res.get(R.string.tool_run_parallel, running),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.placeholder,
+                )
+                Spacer(Modifier.width(4.dp))
+            } else if (calls.size > 1) {
                 Text(
                     text = Res.get(R.string.tool_run_steps, calls.size),
                     style = MaterialTheme.typography.labelSmall,

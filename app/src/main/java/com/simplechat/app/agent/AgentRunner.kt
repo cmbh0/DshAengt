@@ -114,7 +114,11 @@ class AgentRunner(
      * `run_shell` / `python` 也能写文件，但路径藏在命令里，事前无法知道要备份谁 ——
      * 硬猜只会把"回滚"做成一个不可信的功能（Operit 也是同一档取舍）。
      */
-    private val rewindTools = setOf("write_file", "edit_file", "patch_file")
+    /**
+     * `file_ops` 是参数化的：只有 `delete` / `move` 会让 `path` 消失，`copy` /
+     * `mkdir` 不动源文件，见 [rewindTarget]。
+     */
+    private val rewindTools = setOf("write_file", "edit_file", "patch_file", "file_ops")
 
     /**
      * 从工具参数里取出这次要改的文件路径。
@@ -123,7 +127,13 @@ class AgentRunner(
      * 这里只做和 `CloudTools.clean` 一致的去前导斜杠，剩下的交给远端。
      */
     private fun rewindTarget(name: String, args: JsonObject, cloud: Boolean): String? {
-        if (name !in rewindTools) return null
+        if (name == "file_ops") {
+            // 复制/建目录不改源文件，拍快照只会让回滚列表里多出一堆没变过的文件
+            val op = args.str("op").orEmpty().trim().lowercase()
+            if (op != "delete" && op != "move") return null
+        } else if (name !in rewindTools) {
+            return null
+        }
         val raw = (args["path"] as? kotlinx.serialization.json.JsonPrimitive)
             ?.content?.trim().orEmpty()
         if (raw.isEmpty()) return null
@@ -555,7 +565,14 @@ class AgentRunner(
      * 但它们背后可能是任意写操作，并发等于赌运气。
      */
     private fun isParallelSafe(name: String): Boolean = when (name) {
-        "read_file", "list_dir", "read_skill", "web_fetch" -> true
+        /*
+         * `search_content` / `find_files` 也在这里：一次"这个符号在哪定义、
+         * 哪些文件叫 *.kt"的探索常常是两条一起发的，串行等于让第二段遍历
+         * 干等第一段 —— 手机上扫几千个文件是实打实的几百毫秒。
+         * 两者都只读目录树，同批并发不会互相影响。
+         */
+        "read_file", "list_dir", "read_skill", "web_fetch",
+        "search_content", "find_files" -> true
         else -> false
     }
 
@@ -578,6 +595,12 @@ class AgentRunner(
         val raw = when (name) {
             "run_shell" -> flat("command")
             "python" -> flat("code")
+            "file_ops" -> {
+                val op = flat("op")
+                val path = flat("path")
+                val to = flat("to")
+                if (op == "move" || op == "copy") "$path → $to" else "$op $path"
+            }
             "read_file", "write_file", "edit_file", "list_dir" -> flat("path")
             "web_fetch" -> flat("url")
             else -> flat("path").ifEmpty { flat("command") }.ifEmpty { flat("url") }

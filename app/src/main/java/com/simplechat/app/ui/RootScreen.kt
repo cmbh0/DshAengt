@@ -69,6 +69,7 @@ import com.simplechat.app.ui.settings.SettingsScreen
 import com.simplechat.app.ui.workspace.WorkspacePickerScreen
 import com.simplechat.app.ui.workspace.WorkspaceScreen
 import com.simplechat.app.ui.mcp.McpScreen
+import com.simplechat.app.ui.market.MarketScreen
 import com.simplechat.app.ui.runtime.RuntimeScreen
 import com.simplechat.app.ui.skills.SkillsScreen
 import com.simplechat.app.ui.terminal.TerminalScreen
@@ -93,6 +94,8 @@ private enum class Route(val depth: Int) {
     // 从任一个返回都该回到设置，而不是回到聊天
     TERMINAL(1),
     SKILLS(1),
+    /** 插件市场。从技能页进，所以返回目标是技能页而不是设置。 */
+    MARKET(1),
     MCP(1),
     RUNTIME(1),
     /** 选工作区来源（三选一），从顶栏 / 输入栏 / 设置进。 */
@@ -224,6 +227,8 @@ fun RootScreen() {
             Route.TERMINAL -> Route.CHAT
             Route.SKILLS, Route.MCP, Route.RUNTIME,
             Route.PERMISSIONS, Route.SCREEN -> Route.SETTINGS
+            // 市场是技能页的下一层：回技能页，用户刚在那儿点进来
+            Route.MARKET -> Route.SKILLS
             // 云端环境有两个入口（工作区页 / 设置页），回到进来时那一页
             Route.CLOUD -> cloudReturn
             Route.CLOUD_FILES -> Route.CHAT
@@ -484,7 +489,11 @@ fun RootScreen() {
                         )
 
                         Route.TERMINAL -> TerminalScreen(onBack = { route = Route.CHAT })
-                        Route.SKILLS -> SkillsScreen(onBack = { route = Route.SETTINGS })
+                        Route.SKILLS -> SkillsScreen(
+                            onBack = { route = Route.SETTINGS },
+                            onOpenMarket = { route = Route.MARKET },
+                        )
+                        Route.MARKET -> MarketScreen(onBack = { route = Route.SKILLS })
                         Route.MCP -> McpScreen(onBack = { route = Route.SETTINGS })
                         Route.RUNTIME -> RuntimeScreen(onBack = { route = Route.SETTINGS })
                         Route.PROFILE -> ProfileScreen(

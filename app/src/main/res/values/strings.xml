@@ -160,6 +160,7 @@
     <string name="tool_write_file">写入文件</string>
     <string name="tool_edit_file">修改文件</string>
     <string name="tool_list_dir">查看目录</string>
+    <string name="tool_file_ops">整理文件</string>
     <string name="tool_run_shell">执行命令</string>
     <string name="tool_python">运行 Python</string>
     <string name="tool_web_fetch">抓取网页</string>
@@ -190,6 +191,26 @@
     <string name="skills_delete">删除</string>
     <string name="skills_enabled_count">已启用 %1$d 个</string>
     <string name="skills_installed">已安装 %1$d 个技能</string>
+
+    <string name="market_title">插件市场</string>
+    <string name="market_loading">加载中…</string>
+    <string name="market_loading_body">正在拉取索引</string>
+    <string name="market_offline">离线</string>
+    <string name="market_refresh">刷新</string>
+    <string name="market_source">索引地址</string>
+    <string name="market_change_source">更换</string>
+    <string name="market_source_hint">指向一份 index.json 的 https 地址。留空恢复默认源。</string>
+    <string name="market_empty_title">这里还没有插件</string>
+    <string name="market_empty_body">检查网络后刷新，或换一个索引地址。</string>
+    <string name="market_install">安装</string>
+    <string name="market_installing">安装中</string>
+    <string name="market_installed">已安装</string>
+    <string name="market_unsupported">需手动配置</string>
+    <string name="market_install_done">已安装 %1$s</string>
+    <string name="market_install_failed">安装失败：%1$s</string>
+    <string name="market_install_failed_short">未知错误</string>
+    <string name="market_load_failed_short">拉取失败</string>
+    <string name="market_footer">插件就是一个技能包（SKILL.md，可带 scripts）。装好后在「技能」页启停或删除。索引只是一份 JSON，任何人都能维护一份、把地址换过来。</string>
 
     <string name="mcp_title">MCP 服务</string>
     <string name="mcp_empty">还没有配置。MCP 让模型调用外部工具（搜索、数据库、公司内部服务）。</string>
@@ -1177,6 +1198,7 @@
     <string name="screen_pipeline_vision_hint">看屏幕截图并按坐标点。给游戏、自绘界面用 —— 那些界面没有可读的控件。截图只在内存里，不落盘。</string>
     <string name="screen_pipeline_hint">选定之后，AI 只会拿到这一种方式的工具 —— 它不会（也没有能力）临时切到另一种。截图识别会在每一次观察时把当前画面发给模型，分辨率与坐标换算一并给出；适合 UE / Unity 这类没有布局的场景。</string>
     <string name="tool_run_steps">%1$d 步</string>
+    <string name="tool_run_parallel">%1$d 项并行</string>
     <string name="tool_run_expand">展开这 %1$d 次调用的细节</string>
     <string name="model_group_other">其他</string>
     <string name="profile_label">配置</string>

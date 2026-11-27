@@ -75,7 +75,7 @@ import com.simplechat.app.ui.settings.SettingsHint
  * 和大按钮摆在一起会显得页面重心在"添加"而不是"我有哪些技能"。
  */
 @Composable
-fun SkillsScreen(onBack: () -> Unit) {
+fun SkillsScreen(onBack: () -> Unit, onOpenMarket: () -> Unit = {}) {
     val colors = LocalChatColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -174,6 +174,18 @@ fun SkillsScreen(onBack: () -> Unit) {
                     }
                 }
                 if (skills.isNotEmpty()) SkillDivider()
+                /*
+                 * 市场放在"安装 zip"上面。
+                 *
+                 * 两者是同一个动作的两条路：一条自己去网上找一个包，一条直接打开
+                 * 有目录、有说明的列表。新用户不知道去哪找 zip —— 那一行应该先看到市场。
+                 */
+                ActionRow(
+                    icon = AppIcons.Layers,
+                    label = Res.get(R.string.market_title),
+                    onClick = onOpenMarket,
+                )
+                SkillDivider()
                 ActionRow(
                     icon = AppIcons.Upload,
                     label = Res.get(R.string.skills_install_zip),

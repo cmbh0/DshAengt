@@ -16,9 +16,14 @@ import okhttp3.OkHttpClient
 /**
  * 内置工具集。
  *
- * 只有 6 个，且刻意保持"最小可用"：
- * 模型能读写文件、看目录、跑命令、跑 Python、抓网页，就足以完成绝大多数任务；
- * 工具越多，选错的概率越高，上下文也越贵。
+ * 刻意保持"最小可用"：模型能读写文件、看目录、搜索、做文件系统操作、跑命令、
+ * 跑 Python、抓网页，就足以完成绝大多数任务；工具越多，选错的概率越高，
+ * 上下文也越贵。
+ *
+ * 但"最小"不等于"什么都塞给 shell"。`ls` / `cat` / `grep` / `mv` / `rm` 每一个
+ * 都对应一个专用工具 —— 专用工具能校验路径、能并发、能进回滚快照，而 shell
+ * 只有一条命令字符串。**全走 shell 的 Agent 看起来什么都能做，实际上每件事都
+ * 在绕过保护**，这是 [FileOps] 存在的理由。
  *
  * 每个 description 都写了**触发条件**（"当用户要…时用"）而不是功能说明。
  * 这是实践里差别最大的一处：模型是按场景匹配工具的。
@@ -33,6 +38,7 @@ object BuiltinTools {
         SearchContent,
         FindFiles,
         ListDir,
+        FileOps,
         RunShell,
         RunPython,
         ReadSkill,
@@ -266,6 +272,171 @@ object BuiltinTools {
         }
     }
 
+    // ── 目录 / 移动 / 复制 / 删除 ─────────────────────────────
+
+    /**
+     * 结构化的文件系统操作。
+     *
+     * 存在的唯一理由：**把这四件事从 shell 手里拿回来**。此前模型要建个目录、
+     * 把 `a.md` 改名成 `b.md`、删掉一个临时文件，手上只有 `run_shell` ——
+     * 于是每条这样的命令都是一次"终端调用"，占一次审批、占一张卡片，
+     * 而它本来跟"跑构建"完全不是一回事。
+     *
+     * 另有两件附带的收益：
+     * - **边界**：路径统一过 [Workspace.resolve]，越界直接拒绝；shell 里的
+     *   `rm -rf ../..` 没有这层保护。
+     * - **可回滚**：`delete` / `move` 都带 `path` 参数，[Rewind] 能按它拍快照
+     *   （见 `AgentRunner.rewindTarget`）。shell 删掉的东西是真的没了。
+     */
+    private object FileOps : AgentTool {
+        override val name = "file_ops"
+        override val description =
+            "文件系统操作，op 取 mkdir / move / copy / delete。建目录、改名、复制、删文件都用它，" +
+                "**不要**用 run_shell 里的 mkdir / mv / cp / rm —— 专用工具只动工作区内的路径，" +
+                "而且删除与改名前的原文件会被记进回滚快照。删除非空目录要把 recursive 设为 true。"
+        override val parameters: JsonObject = buildJsonObject {
+            put("type", "object")
+            putJsonObject("properties") {
+                putJsonObject("op") {
+                    put("type", "string")
+                    put("description", "mkdir 建目录 / move 移动或改名 / copy 复制 / delete 删除")
+                }
+                putJsonObject("path") {
+                    put("type", "string")
+                    put("description", "源路径；mkdir 时是要创建的目录")
+                }
+                putJsonObject("to") {
+                    put("type", "string")
+                    put("description", "目标路径，仅 move / copy 需要；给的是已存在的目录时放进该目录")
+                }
+                putJsonObject("recursive") {
+                    put("type", "boolean")
+                    put("description", "delete 时是否连同目录内容一起删，默认 false")
+                }
+            }
+            putJsonArray("required") { add("op"); add("path") }
+        }
+        override val mutating = true
+
+        override suspend fun execute(args: JsonObject, ctx: ToolContext): ToolOutcome {
+            val op = args.str("op")?.trim()?.lowercase() ?: return ToolOutcome.fail("缺少 op")
+            val rawPath = args.str("path") ?: return ToolOutcome.fail("缺少 path")
+            val source = try {
+                Workspace.resolve(rawPath)
+            } catch (error: SecurityException) {
+                return ToolOutcome.fail(error.message ?: "路径越界")
+            }
+
+            if (op == "mkdir") {
+                if (source.isDirectory) return ToolOutcome.ok("目录已存在：${Workspace.relative(source)}")
+                if (source.exists()) return ToolOutcome.fail("这里已经有一个同名文件：${Workspace.relative(source)}")
+                val made = withContext(Dispatchers.IO) { source.mkdirs() }
+                return if (made || source.isDirectory) {
+                    ToolOutcome.ok("已创建目录：${Workspace.relative(source)}")
+                } else {
+                    ToolOutcome.fail("创建失败：${Workspace.relative(source)}（父目录不可写？）")
+                }
+            }
+
+            if (!source.exists()) {
+                return ToolOutcome.fail("源路径不存在：${Workspace.relative(source)}")
+            }
+
+            if (op == "delete") {
+                val recursive = args.bool("recursive") == true
+                if (source.isDirectory) {
+                    if (!recursive) {
+                        return ToolOutcome.fail(
+                            "这是一个目录：${Workspace.relative(source)}。要整个删掉请传 recursive=true；" +
+                                "只是想清空里面的东西，先 list_dir 看清再决定。",
+                        )
+                    }
+                    val count = withContext(Dispatchers.IO) { source.walkTopDown().count() }
+                    val ok = withContext(Dispatchers.IO) { source.deleteRecursively() }
+                    return if (ok) {
+                        ToolOutcome.ok(
+                            "已删除目录：${Workspace.relative(source)}（含 $count 项）。\n" +
+                                "注意：目录删除不进回滚快照，这一步不可撤销。",
+                        )
+                    } else {
+                        ToolOutcome.fail("删除失败：${Workspace.relative(source)}（权限不足，或被占用）")
+                    }
+                }
+                val size = source.length()
+                val ok = withContext(Dispatchers.IO) { source.delete() }
+                return if (ok) {
+                    ToolOutcome.ok("已删除：${Workspace.relative(source)}（$size B）")
+                } else {
+                    ToolOutcome.fail("删除失败：${Workspace.relative(source)}（权限不足？）")
+                }
+            }
+
+            if (op != "move" && op != "copy") {
+                return ToolOutcome.fail("不认识的 op：$op（只支持 mkdir / move / copy / delete）")
+            }
+
+            val rawTo = args.str("to") ?: return ToolOutcome.fail("$op 需要 to 参数")
+            val named = try {
+                Workspace.resolve(rawTo)
+            } catch (error: SecurityException) {
+                return ToolOutcome.fail(error.message ?: "目标路径越界")
+            }
+            // to 指向一个已存在的目录 = "放进这个目录"，否则当成"就叫这个名字"
+            val target = if (named.isDirectory) File(named, source.name) else named
+            if (target.exists() && target.canonicalPath == source.canonicalPath) {
+                return ToolOutcome.fail("源和目标是同一个路径：${Workspace.relative(source)}")
+            }
+            if (target.exists() && !target.isDirectory) {
+                return ToolOutcome.fail(
+                    "目标已存在：${Workspace.relative(target)}。改名/覆盖前先确认 —— " +
+                        "要替换它请先 delete，或用别的文件名。",
+                )
+            }
+            // 往自己肚子里搬：copy a/ a/b/ 会把无限递归下去
+            if (target.canonicalPath.startsWith(source.canonicalPath + File.separator)) {
+                return ToolOutcome.fail("目标在源目录内部，这样会无限递归：${Workspace.relative(target)}")
+            }
+
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    target.parentFile?.mkdirs()
+                    if (op == "copy") {
+                        if (source.isDirectory) {
+                            source.copyRecursively(target, overwrite = false)
+                        } else {
+                            source.copyTo(target, overwrite = false)
+                        }
+                        true
+                    } else {
+                        // renameTo 在同一分区上是原子的；跨分区（内置 → sdcard）会返回 false
+                        if (source.renameTo(target)) {
+                            true
+                        } else if (source.isDirectory) {
+                            source.copyRecursively(target, overwrite = false) && source.deleteRecursively()
+                        } else {
+                            source.copyTo(target, overwrite = false)
+                            source.delete()
+                        }
+                    }
+                }
+            }
+            if (result.isFailure) {
+                return ToolOutcome.fail("${if (op == "move") "移动" else "复制"}失败：${result.exceptionOrNull()?.message}")
+            }
+            if (result.getOrNull() != true) {
+                return ToolOutcome.fail("${if (op == "move") "移动" else "复制"}失败：${Workspace.relative(target)} 写入不成功")
+            }
+
+            val label = Workspace.relative(source)
+            val dest = Workspace.relative(target)
+            return if (op == "move") {
+                ToolOutcome.ok("已移动：$label → $dest")
+            } else {
+                ToolOutcome.ok("已复制：$label → $dest" + if (source.isDirectory) "（整目录）" else "")
+            }
+        }
+    }
+
     // ── shell ────────────────────────────────────────────────
 
     private object RunShell : AgentTool {
@@ -276,7 +447,10 @@ object BuiltinTools {
                 "等两百来个命令都在；装了 Python 的话 python3 / pip 也可用。命令看到的是手机的真实文件系统，" +
                 "工作区路径与文件工具里的一致。每条命令是独立进程，不保留 cd 与环境变量，要连续状态就用 && 串起来；" +
                 "脚本可以直接 ./x.sh 运行，不需要 chmod。没有 root、没有 apt，sudo 一定失败；" +
-                "需要系统级能力时请用户换到云端工作环境。不要用它做破坏性操作。"
+                "需要系统级能力时请用户换到云端工作环境。不要用它做破坏性操作。" +
+                "**只把它留给「跑」这件事**（构建、脚本、管道组合）：看目录用 list_dir、读文件用 read_file、" +
+                "搜内容用 search_content、找文件用 find_files、建目录/改名/复制/删除用 file_ops —— " +
+                "用 shell 做这些等于绕过工作区校验和回滚快照。"
         override val parameters: JsonObject = buildJsonObject {
             put("type", "object")
             putJsonObject("properties") {

@@ -122,6 +122,7 @@ fun toolDisplayName(name: String): String = when {
     name == "write_file" -> Res.get(R.string.tool_write_file)
     name == "edit_file" -> Res.get(R.string.tool_edit_file)
     name == "list_dir" -> Res.get(R.string.tool_list_dir)
+    name == "file_ops" -> Res.get(R.string.tool_file_ops)
     name == "run_shell" -> Res.get(R.string.tool_run_shell)
     name == "python" -> Res.get(R.string.tool_python)
     name == "web_fetch" -> Res.get(R.string.tool_web_fetch)
@@ -171,6 +172,13 @@ fun activityLabel(name: String, argsJson: String): String {
         "screen_wait" -> "正在等界面刷新"
         "run_shell" -> "正在执行命令"
         "read_file", "list_dir" -> "正在读文件"
+        "file_ops" -> when (str("op").orEmpty()) {
+            "mkdir" -> "正在建目录"
+            "move" -> "正在移动文件"
+            "copy" -> "正在复制文件"
+            "delete" -> "正在删除文件"
+            else -> "正在整理文件"
+        }
         "write_file", "edit_file" -> "正在写文件"
         "web_fetch" -> "正在打开网页"
         "web_search" -> "正在搜索"
@@ -191,6 +199,11 @@ fun toolSummary(name: String, argsJson: String): String {
 
     return when (name) {
         "read_file", "write_file", "edit_file", "list_dir" -> str("path").orEmpty()
+        "file_ops" -> {
+            val path = str("path").orEmpty()
+            val to = str("to")
+            if (to != null) "$path → $to" else path
+        }
         "run_shell" -> str("command").orEmpty().lineSequence().firstOrNull().orEmpty()
         "python" -> str("code").orEmpty().lineSequence().firstOrNull()?.take(60).orEmpty()
         "web_fetch" -> str("url").orEmpty()
